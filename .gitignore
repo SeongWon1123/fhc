@@ -2,6 +2,10 @@
 .env
 .env.local
 .env.*.local
+.env.development
+.env.test
+.env.staging
+.env.production
 
 # Python
 __pycache__/
