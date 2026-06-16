@@ -1,0 +1,164 @@
+import base64
+import json
+from typing import List, Tuple
+
+import httpx
+
+from app.config import settings
+from app.database import get_optional_supabase
+
+
+OLLAMA_UNAVAILABLE_MESSAGE = (
+    "The AI nutrition service is temporarily unavailable. "
+    "For now, prioritize balanced meals with lean protein, vegetables, "
+    "whole-food carbohydrates, and enough water."
+)
+
+
+async def get_embedding(text: str) -> List[float]:
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(
+            f"{settings.ollama_base_url}/api/embeddings",
+            json={"model": settings.ollama_embed_model, "prompt": text},
+        )
+        resp.raise_for_status()
+        return resp.json()["embedding"]
+
+
+async def _ollama_chat(messages: List[dict]) -> str:
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(
+                f"{settings.ollama_base_url}/api/chat",
+                json={
+                    "model": settings.ollama_chat_model,
+                    "messages": messages,
+                    "stream": False,
+                    "options": {"temperature": 0.7, "num_predict": 800},
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()["message"]["content"]
+    except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError):
+        return OLLAMA_UNAVAILABLE_MESSAGE
+    except Exception:
+        return OLLAMA_UNAVAILABLE_MESSAGE
+
+
+async def _ollama_vision(image_b64: str, prompt: str) -> str:
+    try:
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            resp = await client.post(
+                f"{settings.ollama_base_url}/api/generate",
+                json={
+                    "model": settings.ollama_vision_model,
+                    "prompt": prompt,
+                    "images": [image_b64],
+                    "stream": False,
+                    "options": {"temperature": 0.3, "num_predict": 1000},
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()["response"]
+    except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError):
+        return OLLAMA_UNAVAILABLE_MESSAGE
+    except Exception:
+        return OLLAMA_UNAVAILABLE_MESSAGE
+
+
+async def search_rag(query: str, category: str | None = None, top_k: int = 5) -> List[dict]:
+    supabase = get_optional_supabase()
+    if supabase is None:
+        return []
+
+    try:
+        query_embedding = await get_embedding(query)
+        result = supabase.rpc(
+            "match_rag_documents",
+            {
+                "query_embedding": query_embedding,
+                "match_threshold": 0.5,
+                "match_count": top_k,
+                "filter_category": category,
+            },
+        ).execute()
+        return result.data if result.data else []
+    except Exception:
+        return []
+
+
+async def generate_diet_response(
+    user_message: str,
+    history: List[dict],
+    user_profile: dict,
+) -> Tuple[str, List[str]]:
+    try:
+        relevant_docs = await search_rag(user_message, category="nutrition")
+        context = "\n\n".join([doc.get("content", "") for doc in relevant_docs[:3]])
+        sources = [doc.get("title", "nutrition") for doc in relevant_docs[:3]]
+
+        profile_summary = (
+            f"Fitness goal: {user_profile.get('fitness_goal', 'general health')}\n"
+            f"Preferred sports: {', '.join(user_profile.get('preferred_sports') or [])}"
+        )
+        system_prompt = f"""
+You are FitConnect's nutrition assistant.
+Use the reference context when it is available, and answer with practical,
+non-diagnostic nutrition guidance.
+
+Reference context:
+{context or 'General nutrition knowledge only.'}
+
+User profile:
+{profile_summary}
+
+Rules:
+- Be concise and actionable.
+- Do not provide medical diagnosis or prescriptions.
+- Recommend consulting a clinician for medical conditions.
+"""
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            *history[-6:],
+            {"role": "user", "content": user_message},
+        ]
+        reply = await _ollama_chat(messages)
+        return reply, sources
+    except Exception:
+        return OLLAMA_UNAVAILABLE_MESSAGE, []
+
+
+async def analyze_food_image(image_bytes: bytes, user_profile: dict) -> dict:
+    image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+    goal = user_profile.get("fitness_goal", "general health")
+    prompt = f"""
+Analyze this food image and return only JSON with this shape:
+{{
+  "food_name": "short food name",
+  "calories": 0,
+  "macronutrients": {{"protein": 0, "fat": 0, "carb": 0, "fiber": 0}},
+  "ai_analysis": "brief nutrition assessment for the user's {goal} goal",
+  "recommendations": ["one practical suggestion", "another suggestion"]
+}}
+"""
+
+    raw_response = await _ollama_vision(image_b64, prompt)
+    try:
+        start = raw_response.find("{")
+        end = raw_response.rfind("}") + 1
+        if start != -1 and end > start:
+            parsed = json.loads(raw_response[start:end])
+            parsed.setdefault("analysis", parsed.get("ai_analysis", "Food image analyzed."))
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    return {
+        "food_name": "Unknown food",
+        "calories": 0,
+        "macronutrients": {"protein": 0, "fat": 0, "carb": 0, "fiber": 0},
+        "ai_analysis": raw_response[:300] if raw_response else OLLAMA_UNAVAILABLE_MESSAGE,
+        "analysis": raw_response[:300] if raw_response else OLLAMA_UNAVAILABLE_MESSAGE,
+        "recommendations": ["Try again with a clear, well-lit food photo."],
+    }

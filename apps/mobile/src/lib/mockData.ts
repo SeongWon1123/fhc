@@ -1,0 +1,151 @@
+import { Booking, ClothingItem, Coach, DietLog } from '../types';
+
+export const mockCoaches: Coach[] = [
+  {
+    id: 'coach-1',
+    email: 'maya.coach@example.com',
+    full_name: '김마야',
+    avatar_url: 'https://images.unsplash.com/photo-1594381898411-846e7d193883?auto=format&fit=crop&w=400&q=80',
+    match_score: 94,
+    match_reasons: ['근력 운동', '식단 설계'],
+    coach_details: {
+      id: 'details-1',
+      specialty: ['근력', '체중 감량', '영양'],
+      biography: '지속 가능한 근력 습관, 주간 점검, 쉬운 영양 시스템에 집중하는 공인 트레이너입니다.',
+      experience_years: 7,
+      qualifications: ['NASM CPT', '스포츠 영양 코치'],
+      base_price: 45000,
+      location: '온라인',
+      is_online_available: true,
+      is_offline_available: false,
+      is_verified: true,
+      rating: 4.9,
+      review_count: 128,
+    },
+  },
+  {
+    id: 'coach-2',
+    email: 'jun.park@example.com',
+    full_name: '박준',
+    avatar_url: 'https://images.unsplash.com/photo-1571019613914-85f342c6a11e?auto=format&fit=crop&w=400&q=80',
+    match_score: 88,
+    match_reasons: ['모빌리티', '러닝'],
+    coach_details: {
+      id: 'details-2',
+      specialty: ['러닝', '모빌리티', '재활'],
+      biography: '초보자가 모빌리티와 회복 루틴을 함께 가져가며 안전하게 주행 거리를 늘리도록 돕는 러닝 코치입니다.',
+      experience_years: 5,
+      qualifications: ['RRCA 러닝 코치', '교정 운동 전문가'],
+      base_price: 38000,
+      location: '서울 스튜디오',
+      is_online_available: true,
+      is_offline_available: true,
+      is_verified: true,
+      rating: 4.7,
+      review_count: 86,
+    },
+  },
+  {
+    id: 'coach-3',
+    email: 'sarah.lee@example.com',
+    full_name: '이사라',
+    avatar_url: 'https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=400&q=80',
+    match_score: 82,
+    match_reasons: ['필라테스', '자세 교정'],
+    coach_details: {
+      id: 'details-3',
+      specialty: ['필라테스', '자세 교정', '코어'],
+      biography: '자세, 코어 조절, 초보자에게 맞는 습관 형성을 전문으로 하는 필라테스 지도자입니다.',
+      experience_years: 6,
+      qualifications: ['필라테스 매트 지도자', '프리햅 전문가'],
+      base_price: 42000,
+      location: '분당',
+      is_online_available: true,
+      is_offline_available: true,
+      is_verified: true,
+      rating: 4.8,
+      review_count: 103,
+    },
+  },
+];
+
+export const mockBookings: Booking[] = [
+  {
+    id: 'booking-1',
+    user_id: 'demo-user',
+    coach_id: 'coach-1',
+    scheduled_at: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+    duration_minutes: 60,
+    session_type: 'online',
+    status: 'confirmed',
+    price: 45000,
+    meeting_url: 'https://meet.example.com/session',
+    notes: '전신 초보자 루틴 중심으로 진행하고 싶어요.',
+    created_at: new Date().toISOString(),
+  },
+];
+
+export const mockDietLogs: DietLog[] = [
+  {
+    id: 'diet-1',
+    meal_type: 'breakfast',
+    food_name: '그릭요거트, 베리, 그래놀라',
+    calories: 420,
+    macronutrients: { protein: 28, carb: 48, fat: 12, fiber: 7 },
+    ai_analysis: '아침 운동에 필요한 탄수화물과 단백질이 충분한 식사입니다.',
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'diet-2',
+    meal_type: 'lunch',
+    food_name: '채소 닭가슴살 덮밥',
+    calories: 650,
+    macronutrients: { protein: 42, carb: 72, fat: 18, fiber: 8 },
+    ai_analysis: '균형 잡힌 점심입니다. 운동을 마쳤다면 수분을 보충하고 저녁은 가볍게 가져가세요.',
+    created_at: new Date().toISOString(),
+  },
+];
+
+export const mockClothingItems: ClothingItem[] = [
+  {
+    name: '통기성 트레이닝 티셔츠',
+    brand: 'CoreFit',
+    price: 29000,
+    original_price: 39000,
+    url: 'https://example.com/training-tee',
+    image_url: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=500&q=80',
+    category: '헬스',
+    affiliate_type: 'demo',
+  },
+  {
+    name: '4방향 스트레치 쇼츠',
+    brand: 'MotionLab',
+    price: 34000,
+    url: 'https://example.com/stretch-shorts',
+    image_url: 'https://images.unsplash.com/photo-1556906781-9a412961c28c?auto=format&fit=crop&w=500&q=80',
+    category: '러닝',
+    affiliate_type: 'demo',
+  },
+  {
+    name: '그립 스튜디오 삭스',
+    brand: 'Balance',
+    price: 12000,
+    original_price: 18000,
+    url: 'https://example.com/grip-socks',
+    image_url: 'https://images.unsplash.com/photo-1562157873-818bc0726f68?auto=format&fit=crop&w=500&q=80',
+    category: '필라테스',
+    affiliate_type: 'demo',
+  },
+  {
+    name: '라이트웨이트 집업 후디',
+    brand: 'Recover',
+    price: 59000,
+    url: 'https://example.com/zip-hoodie',
+    image_url: 'https://images.unsplash.com/photo-1556821840-3a63f95609a7?auto=format&fit=crop&w=500&q=80',
+    category: '요가',
+    affiliate_type: 'demo',
+  },
+];
+
+export const getMockCoach = (coachId?: string) =>
+  mockCoaches.find((coach) => coach.id === coachId) ?? mockCoaches[0];

@@ -1,0 +1,121 @@
+{
+  "version": 1,
+  "description": "Production real-data import schema for FitConnect Supabase tables. Templates are header-only and intentionally contain no demo rows.",
+  "datasets": {
+    "profiles": {
+      "file": "profiles.csv",
+      "table": "profiles",
+      "primary_key": "id",
+      "write": "upsert",
+      "required": ["id", "email", "role"],
+      "columns": {
+        "id": {"type": "uuid"},
+        "email": {"type": "text"},
+        "full_name": {"type": "text"},
+        "avatar_url": {"type": "text"},
+        "phone": {"type": "text"},
+        "role": {"type": "enum", "values": ["user", "coach", "gym_owner", "admin"]},
+        "onboarding_completed": {"type": "boolean"},
+        "fitness_goal": {"type": "enum", "values": ["weight_loss", "muscle_gain", "maintenance", "endurance"]},
+        "preferred_sports": {"type": "text_array"}
+      }
+    },
+    "coaches": {
+      "file": "coaches.csv",
+      "table": "coach_details",
+      "primary_key": "id",
+      "write": "upsert",
+      "required": ["id"],
+      "columns": {
+        "id": {"type": "uuid"},
+        "name": {"type": "text"},
+        "specialty": {"type": "text_array"},
+        "biography": {"type": "text"},
+        "qualifications": {"type": "text_array"},
+        "base_price": {"type": "integer"},
+        "is_verified": {"type": "boolean"},
+        "rating": {"type": "decimal"},
+        "experience_years": {"type": "integer"},
+        "location": {"type": "text"},
+        "is_online_available": {"type": "boolean"},
+        "is_offline_available": {"type": "boolean"},
+        "video_url": {"type": "text"},
+        "review_count": {"type": "integer"},
+        "booking_count": {"type": "integer"},
+        "gym_id": {"type": "uuid"}
+      }
+    },
+    "bookings": {
+      "file": "bookings.csv",
+      "table": "bookings",
+      "primary_key": "id",
+      "write": "upsert",
+      "required": ["user_id", "coach_id", "scheduled_at", "price"],
+      "columns": {
+        "id": {"type": "uuid"},
+        "user_id": {"type": "uuid"},
+        "coach_id": {"type": "uuid"},
+        "scheduled_at": {"type": "timestamp"},
+        "duration_minutes": {"type": "integer"},
+        "session_type": {"type": "enum", "values": ["online", "offline"]},
+        "status": {"type": "enum", "values": ["pending", "confirmed", "completed", "cancelled", "no_show"]},
+        "price": {"type": "integer"},
+        "meeting_url": {"type": "text"},
+        "location": {"type": "text"},
+        "notes": {"type": "text"},
+        "coach_notes": {"type": "text"}
+      }
+    },
+    "diet": {
+      "file": "diet_logs.csv",
+      "table": "diet_logs",
+      "primary_key": "id",
+      "write": "upsert",
+      "required": ["user_id", "food_name", "meal_type"],
+      "columns": {
+        "id": {"type": "uuid"},
+        "user_id": {"type": "uuid"},
+        "food_name": {"type": "text"},
+        "calories": {"type": "integer"},
+        "macronutrients": {"type": "json"},
+        "image_url": {"type": "text"},
+        "meal_type": {"type": "enum", "values": ["breakfast", "lunch", "dinner", "snack"]},
+        "ai_analysis": {"type": "text"},
+        "coach_feedback": {"type": "text"},
+        "created_at": {"type": "timestamp"}
+      }
+    },
+    "clothing": {
+      "file": "clothing_recommendations.csv",
+      "table": "clothing_recommendations",
+      "primary_key": "id",
+      "write": "upsert",
+      "required": ["user_id", "sport_category", "items"],
+      "columns": {
+        "id": {"type": "uuid"},
+        "user_id": {"type": "uuid"},
+        "sport_category": {"type": "text"},
+        "items": {"type": "json"},
+        "clicked_at": {"type": "timestamp"},
+        "purchased_at": {"type": "timestamp"},
+        "commission_rate": {"type": "decimal"},
+        "created_at": {"type": "timestamp"}
+      }
+    },
+    "rag": {
+      "file": "rag_documents.csv",
+      "table": "rag_documents",
+      "primary_key": "id",
+      "write": "upsert",
+      "required": ["title", "content", "category"],
+      "columns": {
+        "id": {"type": "uuid"},
+        "title": {"type": "text"},
+        "content": {"type": "text"},
+        "category": {"type": "enum", "values": ["nutrition", "exercise", "supplement", "clothing"]},
+        "source": {"type": "text"},
+        "embedding": {"type": "vector"}
+      }
+    }
+  }
+}

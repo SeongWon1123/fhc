@@ -1,0 +1,63 @@
+{
+  "expo": {
+    "name": "FitConnect",
+    "slug": "fitconnect",
+    "version": "1.0.0",
+    "description": "FitConnect combines coach booking, AI diet support, and workout clothing recommendations in one mobile app.",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "fitconnect",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "kr.fitconnect.app",
+      "buildNumber": "1",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "FitConnect lets you choose meal photos for diet analysis.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "kr.fitconnect.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "FitConnect lets you choose meal photos for diet analysis.",
+          "microphonePermission": false
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "00000000-0000-0000-0000-000000000000"
+      },
+      "appStore": {
+        "privacyPolicyUrl": "https://example.com/fitconnect/privacy",
+        "supportUrl": "https://example.com/fitconnect/support",
+        "marketingUrl": "https://example.com/fitconnect",
+        "sku": "FITCONNECT-IOS-001"
+      }
+    }
+  }
+}
