@@ -1,11 +1,24 @@
-# Environment variables
+# Environment variables / secrets (never commit)
 .env
+.env.*
+!.env.example
+!.env.*.example
 .env.local
 .env.*.local
 .env.development
 .env.test
 .env.staging
 .env.production
+*.pem
+*.p12
+*.key
+secrets/
+credentials/
+
+# Binary / official documents (local backup only; keep out of git)
+*.hwp
+*.hwpx
+*.pdf
 
 # Python
 __pycache__/
@@ -192,12 +205,7 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
-# Environments
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# Environments (see top-of-file secrets block; keep examples only)
 
 # FastAPI
 .mypy_cache
