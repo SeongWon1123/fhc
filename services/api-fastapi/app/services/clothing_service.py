@@ -135,14 +135,14 @@ async def get_clothing_recommendations(
             )
             if result.data:
                 items = result.data[0].get("items") or []
-                return items[:limit]
+                if items:
+                    return items[:limit]
         except Exception:
             if not settings.demo_fallback_enabled:
                 raise RuntimeError("Clothing recommendation data store unavailable")
 
-    if not settings.demo_fallback_enabled:
-        return []
-
+    # Seed a deterministic starter set on first access, then persist it per user/category.
+    # This keeps real Supabase mode usable before an external commerce catalogue is connected.
     products = SAMPLE_PRODUCTS.get(normalized_category, SAMPLE_PRODUCTS["gym"])[:limit]
 
     if supabase is not None:

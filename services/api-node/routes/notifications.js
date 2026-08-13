@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const { authenticateToken } = require('../middleware/auth');
 const { createClient } = require('@supabase/supabase-js');
@@ -18,10 +18,10 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// 내 알림 목록
+// ???뚮┝ 紐⑸줉
 router.get('/', authenticateToken, async (req, res) => {
   const { data, error } = await supabase
-    .table('notifications')
+    .from('notifications')
     .select('*')
     .eq('user_id', req.user.id)
     .order('created_at', { ascending: false })
@@ -34,10 +34,10 @@ router.get('/', authenticateToken, async (req, res) => {
   res.json(data);
 });
 
-// 알림 읽음 처리
+// ?뚮┝ ?쎌쓬 泥섎━
 router.patch('/:id/read', authenticateToken, async (req, res) => {
   const { data, error } = await supabase
-    .table('notifications')
+    .from('notifications')
     .update({ is_read: true })
     .eq('id', req.params.id)
     .eq('user_id', req.user.id);
@@ -49,10 +49,10 @@ router.patch('/:id/read', authenticateToken, async (req, res) => {
   res.json({ success: true });
 });
 
-// 모든 알림 읽음 처리
+// 紐⑤뱺 ?뚮┝ ?쎌쓬 泥섎━
 router.patch('/read-all', authenticateToken, async (req, res) => {
   await supabase
-    .table('notifications')
+    .from('notifications')
     .update({ is_read: true })
     .eq('user_id', req.user.id)
     .eq('is_read', false);

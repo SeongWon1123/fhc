@@ -48,10 +48,14 @@ async def track_clothing_click(
         return {"status": "tracked", "source": "demo-fallback"}
 
     try:
-        supabase.table("clothing_recommendations").update(
+        result = supabase.table("clothing_recommendations").update(
             {"clicked_at": datetime.now(timezone.utc).isoformat()}
         ).eq("id", recommendation_id).eq("user_id", str(current_user.id)).execute()
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Recommendation not found")
         return {"status": "tracked", "source": "supabase"}
+    except HTTPException:
+        raise
     except Exception:
         if not settings.demo_fallback_enabled:
             raise HTTPException(
