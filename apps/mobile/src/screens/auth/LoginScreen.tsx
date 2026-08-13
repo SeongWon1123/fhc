@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
 import { supabase } from '../../lib/supabase';
@@ -10,13 +10,39 @@ export const LoginScreen: React.FC = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const { fetchProfile } = useStore();
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const getAuthErrorMessage = (error: unknown, fallback: string) => {
+    const message = error instanceof Error ? error.message : String(error ?? '');
+    const normalized = message.toLowerCase();
+    if (normalized.includes('email rate limit') || normalized.includes('rate limit')) {
+      return '가입 인증 메일 발송 제한에 도달했습니다. 잠시 후 다시 시도해주세요.';
+    }
+    if (normalized.includes('email not confirmed')) {
+      return '이메일 인증이 완료되지 않았습니다. 메일함을 확인한 뒤 다시 로그인해주세요.';
+    }
+    if (normalized.includes('invalid login credentials')) {
+      return '이메일 또는 비밀번호가 올바르지 않습니다.';
+    }
+    if (normalized.includes('already registered') || normalized.includes('already been registered')) {
+      return '이미 가입된 이메일입니다. 로그인해주세요.';
+    }
+    return message || fallback;
+  };
 
   const validateForm = () => {
-    if (!email.trim() || !password) {
+    if (!normalizedEmail || !password) {
       Alert.alert('입력 정보 부족', '이메일과 비밀번호를 입력해주세요.');
       return false;
     }
-
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      Alert.alert('이메일 형식 확인', '올바른 이메일 주소를 입력해주세요.');
+      return false;
+    }
+    if (password.length < 8) {
+      Alert.alert('비밀번호 확인', '비밀번호는 8자 이상으로 입력해주세요.');
+      return false;
+    }
     return true;
   };
 
@@ -26,17 +52,17 @@ export const LoginScreen: React.FC = () => {
     setLoading(true);
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: normalizedEmail,
         password,
       });
 
       if (error) throw error;
 
       if (data.user) {
-        await fetchProfile(data.user.id, data.user.email ?? email.trim());
+        await fetchProfile(data.user.id, data.user.email ?? normalizedEmail);
       }
     } catch (error: any) {
-      Alert.alert('로그인 실패', error.message ?? '로그인할 수 없습니다.');
+      Alert.alert('로그인 실패', getAuthErrorMessage(error, '로그인할 수 없습니다.'));
     } finally {
       setLoading(false);
     }
@@ -44,40 +70,42 @@ export const LoginScreen: React.FC = () => {
 
   const handleSignUp = async () => {
     if (!validateForm()) return;
-
     setLoading(true);
     try {
       const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
+        email: normalizedEmail,
         password,
       });
-
       if (error) throw error;
-
-      if (data.user) {
-        await supabase.from('profiles').upsert(
-          {
-            id: data.user.id,
-            email: data.user.email ?? email.trim(),
-            role: 'user',
-            onboarding_completed: false,
-          },
-          { onConflict: 'id' }
-        );
-        await fetchProfile(data.user.id, data.user.email ?? email.trim());
+      if (!data.user) {
+        throw new Error('계정 생성 결과를 확인할 수 없습니다.');
       }
 
-      Alert.alert('계정 생성 완료', '이메일 인증이 필요한 경우 메일함을 확인해주세요.', [
-        { text: '메일 열기', onPress: () => Linking.openURL(`mailto:${email.trim()}`) },
-        { text: '확인' },
-      ]);
-    } catch (error: any) {
-      Alert.alert('회원가입 실패', error.message ?? '계정을 만들 수 없습니다.');
+      const { error: profileError } = await supabase.from('profiles').upsert(
+        {
+          id: data.user.id,
+          email: data.user.email ?? normalizedEmail,
+          role: 'user',
+          onboarding_completed: false,
+        },
+        { onConflict: 'id' }
+      );
+      if (profileError) {
+        console.warn('Initial profile creation failed; onboarding will retry.', profileError.message);
+      }
+      await fetchProfile(data.user.id, data.user.email ?? normalizedEmail);
+
+      if (data.session) {
+        Alert.alert('계정 생성 완료', '계정이 생성되었습니다. 간단한 온보딩을 완료해주세요.');
+      } else {
+        Alert.alert('이메일 인증 필요', '계정을 활성화하려면 이메일 인증을 완료한 뒤 로그인해주세요.');
+      }
+    } catch (error: unknown) {
+      Alert.alert('회원가입 실패', getAuthErrorMessage(error, '계정을 만들 수 없습니다.'));
     } finally {
       setLoading(false);
     }
   };
-
   return (
     <View style={styles.container}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
