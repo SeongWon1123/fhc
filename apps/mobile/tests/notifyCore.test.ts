@@ -1,5 +1,4 @@
 import {
-  cancelButtonIndex,
   confirmButtonIndex,
   isCancelButton,
   resolveButtonHandler,
@@ -48,7 +47,6 @@ test('the LAST non-cancel button is the confirm-style one', () => {
     { text: '로그아웃', onPress: () => {}, style: 'destructive' },
   ];
   expect(confirmButtonIndex(buttons)).toBe(2);
-  expect(cancelButtonIndex(buttons)).toBe(0);
 });
 
 test('an empty or absent button list has nothing to confirm and nothing to run', () => {

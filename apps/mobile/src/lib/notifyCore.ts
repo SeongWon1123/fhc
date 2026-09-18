@@ -24,10 +24,6 @@ export const isCancelButton = (button: NotifyButton | undefined): boolean => {
   return text.length > 0 && CANCEL_TEXTS.indexOf(text) >= 0;
 };
 
-/** Index of the first cancel/dismiss button, or -1 when there is none. */
-export const cancelButtonIndex = (buttons?: readonly NotifyButton[] | null): number =>
-  (buttons ?? []).findIndex((button) => isCancelButton(button));
-
 /**
  * Index of the button a confirm-style dialog treats as "OK": the LAST non-cancel
  * button (the dismiss button leads, the affirmative action sits rightmost).

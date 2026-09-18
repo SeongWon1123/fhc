@@ -6,12 +6,14 @@ demo fallback). Fixtures here pin the settings the tests assert on, and every
 test that depends on a specific configuration asks for the matching fixture
 instead of assuming the machine is set up a particular way.
 
-Reloading note: routers do ``from app.config import settings`` and pull
-``get_current_user`` from ``app.dependencies`` at import time, so reloading
-``app.config`` alone leaves every router holding the old objects. The fixtures
-reload ``app.config`` and ``app.dependencies`` first, then every router module,
-then ``main`` -- each reload rebinds the router globals to freshly built
-settings.
+Reloading note: modules bind their collaborators at import time -- routers do
+``from app.config import settings`` and pull ``get_current_user`` from
+``app.dependencies``, while ``app.database`` binds ``settings`` and caches the
+Supabase client -- so reloading ``app.config`` alone leaves every one of them
+holding the old objects. The fixtures reload ``app.config`` first, then
+``app.database`` (fresh settings, client cache cleared) before
+``app.dependencies`` and every router, and finish with ``main``. Order matters:
+each module must be rebuilt after the ones it imports from.
 """
 
 import importlib
@@ -27,7 +29,7 @@ _CONFIGURED_ENV = {
     "ADMIN_API_KEY": "",
 }
 
-_ROUTER_MODULES = (
+_RELOAD_MODULES = (
     "app.dependencies",
     "app.routers.coaches",
     "app.routers.bookings",
@@ -37,13 +39,26 @@ _ROUTER_MODULES = (
 )
 
 
-def _reload_app(values: dict[str, str]):
-    """Rebuild the app with `values` forced into the process environment."""
+def _reload_app():
+    """Rebuild the app from the process environment the caller has pinned.
+
+    Environment pinning is the caller's job (``monkeypatch.setenv``); this helper
+    only re-imports the modules whose import-time globals must be rebuilt.
+    """
     import app.config as config_module
 
     importlib.reload(config_module)
 
-    for module_name in _ROUTER_MODULES:
+    # `app.database` binds `settings` at import time and caches the Supabase
+    # client, so it must be rebuilt from the fresh config -- and before
+    # `app.dependencies` and the routers, which import from it -- or a client
+    # built from ambient `.env` credentials would keep serving the demo tests.
+    import app.database as database_module
+
+    importlib.reload(database_module)
+    database_module._supabase_client = None
+
+    for module_name in _RELOAD_MODULES:
         importlib.reload(importlib.import_module(module_name))
 
     import main
@@ -57,7 +72,7 @@ def demo_app(monkeypatch: pytest.MonkeyPatch):
     """The app in demo-fallback mode: no Supabase, demo data served."""
     for key, value in _CONFIGURED_ENV.items():
         monkeypatch.setenv(key, value)
-    return _reload_app(_CONFIGURED_ENV)
+    return _reload_app()
 
 
 @pytest.fixture
@@ -66,4 +81,4 @@ def strict_app(monkeypatch: pytest.MonkeyPatch):
     values = dict(_CONFIGURED_ENV, ENABLE_DEMO_FALLBACK="false")
     for key, value in values.items():
         monkeypatch.setenv(key, value)
-    return _reload_app(values)
+    return _reload_app()

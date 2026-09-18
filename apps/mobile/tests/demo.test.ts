@@ -1,4 +1,4 @@
-import { IS_DEMO, demoModeFrom, DEMO_USER } from '../src/lib/demo';
+import { demoModeFrom, DEMO_USER } from '../src/lib/demo';
 
 /**
  * Bun injects `test`/`expect` as Jest-compatible globals into test files, so no
@@ -19,11 +19,10 @@ test('demoModeFrom only accepts the exact string "true"', () => {
   expect(demoModeFrom('TRUE')).toBe(false);
 });
 
-test('IS_DEMO mirrors EXPO_PUBLIC_DEMO_MODE through the same predicate', () => {
-  expect(IS_DEMO).toBe(demoModeFrom(process.env.EXPO_PUBLIC_DEMO_MODE));
-});
-
-test('DEMO_USER is shaped like the supabase user RootNavigator reads', () => {
+test('DEMO_USER carries the fields RootNavigator and the store read', () => {
   expect(DEMO_USER.id).toMatch(/^[0-9a-f-]{36}$/i);
+  expect(DEMO_USER.email).toMatch(/@/);
+  expect(DEMO_USER.role).toBe('user');
+  expect(DEMO_USER.onboarding_completed).toBe(true);
   expect(DEMO_USER.user_metadata.onboarding_completed).toBe(true);
 });

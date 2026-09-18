@@ -14,6 +14,3 @@ export type BookingStatus = 'pending' | 'confirmed' | 'completed' | 'cancelled' 
 
 /** How a session is delivered. Mirrored by the API's `SessionType` enum. */
 export type SessionType = 'online' | 'offline';
-
-/** The two client surfaces: the member/coach app and the operator console. */
-export type ClientSurface = 'mobile' | 'web';

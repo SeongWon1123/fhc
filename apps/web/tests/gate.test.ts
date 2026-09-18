@@ -13,6 +13,9 @@ describe('operator console access rule', () => {
     // `unconfigured` wins over an absent session: telling the operator to log in
     // would be misleading when no auth backend exists.
     expect(decideGate({ loading: false, unconfigured: true, hasSession: false })).toBe('unconfigured');
+    // It also wins over a session that still exists on the client (e.g. stale
+    // credentials in localStorage): auth cannot be validated without config.
+    expect(decideGate({ loading: false, unconfigured: true, hasSession: true })).toBe('unconfigured');
   });
 
   test('requires a session once auth is configured', () => {
