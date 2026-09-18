@@ -148,12 +148,62 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8081/
 재현되지 않았다. 환경에 따라 프로세스 트리가 정리될 수 있으므로, 데모 중에는 포그라운드나 감독
 프로세스(tmux, 별도 터미널, `wait` 루프)로 띄우고, 끝나면 직접 종료한다.
 
-정리:
+### 정리 — kill이 성공했다고 믿지 말고 포트로 확인한다
+
+백그라운드로 띄운 프로세스를 `$!`로 죽이는 방식은 믿을 수 없다. 셸에서 `nohup ... &`를 쓰면
+`$!`가 **중간 서브셸**을 가리킬 수 있어서, `kill $PID` 뒤 `kill -0 $PID`가 "죽었다"고 보고해도
+실제 서버는 계속 떠 있는 경우가 있다. 이 함정을 겪으면 두 번째 기동이 `address already in use`로
+실패하고, 남아 있던 이전 프로세스가 응답해서 검증 결과의 출처가 오염된다(어느 프로세스가 답했는지
+알 수 없게 된다). 그래서 종료 여부는 kill의 반환값이 아니라 **리스너와 응답**으로 판정한다.
 
 ```bash
-pkill -f 'uvicorn main:app --host 127.0.0.1 --port 8000'
-pkill -f 'http.server 8081'
+# 1) 먼저 무엇이 떠 있는지 읽는다 (죽이기 전에 매칭 목록을 반드시 확인한다)
+pgrep -af 'uvicorn main:app|http.server 8081'
+ss -ltnp | grep -E ':(8000|8081)'
 ```
+
+```bash
+# 2) 종료를 시도한다 (TERM → 살아 있으면 KILL)
+kill <pid>
+kill -9 <pid>
+```
+
+```bash
+# 3) 정말 죽었는지 확인한다 — 둘 다 비어야 정리 완료다
+ss -ltn | grep -E ':(8000|8081)'
+curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:8000/health
+```
+
+`ss -ltn` 출력이 비어 있고 curl이 아무것도 출력하지 않거나 연결 오류를 내야 한다. 리스너가 남아
+있으면 `kill -9 <pid>`로 올리고, 그래도 남으면 마지막 수단으로 패턴 정리를 쓴다.
+
+```bash
+pkill -f 'uvicorn main:app'
+pkill -f 'http.server'
+```
+
+주의: `pgrep -f <패턴>`과 대괄호 없는 `pkill -f <패턴>`은 **검사하는 셸 자신의 명령줄도 매칭**할 수
+있다(예: `pgrep -f 'http.server 8081'`이 자기 자신을 잡는다). 그래서 죽이기 전에 매칭된 목록을 읽고
+진짜 서버인지 확인한다.
+
+데모 중에는 백그라운드 프로세스가 살아 있으리라 가정하지 말고 포그라운드나 감독 프로세스(tmux,
+별도 터미널, `wait` 루프)로 띄운다. 이는 위 4절 서두의 관측과 같은 이유다.
+
+### 웹 콘솔 번들 주의 — `VITE_` 실값이 `dist`에 박힌다
+
+운영자 콘솔 `apps/web`을 실제 `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` 값으로 빌드하면
+**실제 Supabase 프로젝트 ref와 키가 `apps/web/dist`에 그대로 들어간다**(현재
+`apps/web/dist/assets/index-h7LzF-5T.js`에 실제 ref가 1건 박혀 있는 것을 확인했다. 실값의 출처는
+루트 `.env`이며, 값 자체는 이 문서에 옮겨 적지 않는다). `apps/web/dist`는 gitignore 대상이라
+커밋되거나 푸시되지 않지만, 그 디렉터리를 배포하거나 압축해 제3자에게 전달하면 자격증명이 함께
+나간다.
+
+따라서 콘솔을 배포하거나 전달할 일이 있으면 다음 중 하나를 한다.
+
+- 더미 `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` 값으로 다시 빌드한 산출물을 배포한다.
+- 또는 배포·압축 대상에서 `apps/web/dist`를 제외한다.
+
+`apps/web/dist`는 삭제하지 않는다(재생성 가능한 산출물이므로 경고로만 남긴다).
 
 ---
 
