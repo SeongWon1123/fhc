@@ -7,5 +7,17 @@
     "paths": {
       "@fitconnect/shared": ["../../packages/shared/src/index.ts"]
     }
-  }
+  },
+  /* A child config's `exclude` replaces the base array, so the entries from
+     expo/tsconfig.base are repeated here and `dist` (the exported web bundle)
+     is added: allowJs makes tsc parse it otherwise. */
+  "exclude": [
+    "node_modules",
+    "babel.config.js",
+    "metro.config.js",
+    "jest.config.js",
+    "android",
+    "ios",
+    "dist"
+  ]
 }
