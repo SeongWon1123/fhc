@@ -1,5 +1,6 @@
-import { Activity, BarChart3, CalendarCheck, Dumbbell, Shirt, Users } from 'lucide-react';
+import { Activity, BarChart3, CalendarCheck, Dumbbell, LogOut, Shirt, UserRound, Users } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { supabase } from '../supabaseClient';
 
 const sidebarItems = [
   { path: '/dashboard', label: '운영 개요', icon: Activity },
@@ -43,6 +44,24 @@ export default function Sidebar() {
           <Shirt size={16} aria-hidden="true" />
           <span>API 연동 MVP 운영</span>
         </div>
+        <button
+          className="nav-button"
+          onClick={() => navigate('/account')}
+          type="button"
+          style={{ marginTop: 12 }}
+        >
+          <UserRound size={18} aria-hidden="true" />
+          내 계정
+        </button>
+        <button
+          className="nav-button"
+          onClick={() => supabase?.auth.signOut()}
+          type="button"
+          style={{ marginTop: 4 }}
+        >
+          <LogOut size={18} aria-hidden="true" />
+          로그아웃
+        </button>
       </div>
     </aside>
   );

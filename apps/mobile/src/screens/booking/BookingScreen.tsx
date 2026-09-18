@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,6 +12,7 @@ import { Calendar } from 'react-native-calendars';
 import { Button } from '../../components/common/Button';
 import { Loading } from '../../components/common/Loading';
 import { api } from '../../lib/api';
+import { notify } from '../../lib/notify';
 import { Coach } from '../../types';
 
 type BookingRouteParams = {
@@ -68,17 +68,17 @@ export const BookingScreen: React.FC = () => {
 
   const handleBooking = async () => {
     if (!selectedDate || !selectedTime) {
-      Alert.alert('시간 선택', '예약 전에 날짜와 시간을 선택해주세요.');
+      notify('시간 선택', '예약 전에 날짜와 시간을 선택해주세요.');
       return;
     }
 
     if (!coach) {
-      Alert.alert('코치 없음', '예약은 활성 코치 프로필에서 시작해주세요.');
+      notify('코치 없음', '예약은 활성 코치 프로필에서 시작해주세요.');
       return;
     }
 
     if (sessionType === 'offline' && !coach.coach_details.is_offline_available) {
-      Alert.alert('예약 불가', '이 코치는 현재 온라인 세션만 가능합니다.');
+      notify('예약 불가', '이 코치는 현재 온라인 세션만 가능합니다.');
       return;
     }
 
@@ -95,12 +95,12 @@ export const BookingScreen: React.FC = () => {
         notes: notes.trim() || undefined,
       });
 
-      Alert.alert('예약 요청 완료', '예약 요청이 접수되었습니다.', [
+      notify('예약 요청 완료', '예약 요청이 접수되었습니다.', [
         { text: '예약 보기', onPress: () => navigation.navigate('BookingList') },
       ]);
     } catch (error: any) {
       console.error('예약 생성에 실패했습니다:', error);
-      Alert.alert('예약 실패', '예약 서비스를 사용할 수 없습니다. 연결이 복구된 뒤 다시 시도해주세요.');
+      notify('예약 실패', '예약 서비스를 사용할 수 없습니다. 연결이 복구된 뒤 다시 시도해주세요.');
     } finally {
       setLoading(false);
     }

@@ -1,0 +1,12 @@
+{
+  "name": "@fitconnect/shared",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Domain vocabulary shared by the FitConnect clients.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

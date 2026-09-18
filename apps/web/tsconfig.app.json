@@ -22,7 +22,12 @@
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
+    "noUncheckedSideEffectImports": true,
+
+    /* Workspace package: resolves to source, so no build step is required. */
+    "paths": {
+      "@fitconnect/shared": ["../../packages/shared/src/index.ts"]
+    }
   },
   "include": ["src"]
 }

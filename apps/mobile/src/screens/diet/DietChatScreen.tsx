@@ -165,9 +165,11 @@ export const DietChatScreen: React.FC = () => {
       />
 
       <View style={styles.inputContainer}>
-        <TouchableOpacity style={styles.cameraButton} onPress={handleImageUpload}>
-          <Camera size={20} color="#6b7280" />
-        </TouchableOpacity>
+        {Platform.OS === 'web' ? null : (
+          <TouchableOpacity style={styles.cameraButton} onPress={handleImageUpload}>
+            <Camera size={20} color="#6b7280" />
+          </TouchableOpacity>
+        )}
 
         <TextInput
           style={styles.textInput}

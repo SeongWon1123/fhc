@@ -5,6 +5,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import { consumeAuthLink, type AuthLinkKind } from '../lib/authLinking';
 import { useStore } from '../lib/store';
+import { DEMO_USER, IS_DEMO } from '../lib/demo';
 import AuthNavigator from './AuthNavigator';
 import MainTabNavigator from './MainTabNavigator';
 
@@ -27,6 +28,14 @@ export default function RootNavigator() {
   }, []);
 
   useEffect(() => {
+    if (IS_DEMO) {
+      // Demo builds never touch Supabase auth: no session read, no auth-event
+      // subscription. Seed the fixed user and end the loading state instead.
+      setUser(DEMO_USER);
+      setLoading(false);
+      return;
+    }
+
     let isMounted = true;
 
     const hydrateSession = async () => {
@@ -72,7 +81,13 @@ export default function RootNavigator() {
     };
   }, [fetchProfile, handleIncomingUrl, setLoading, setUser]);
 
-  if (isLoading) {
+  useEffect(() => {
+    // Demo logout is a no-op: re-seed the fixed user so the app body never
+    // falls back to the login screen.
+    if (IS_DEMO && !user) setUser(DEMO_USER);
+  }, [setUser, user]);
+
+  if (isLoading && !IS_DEMO) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a' }}>
         <ActivityIndicator size="large" color="#60a5fa" />
@@ -81,9 +96,10 @@ export default function RootNavigator() {
   }
 
   const forceRecovery = authFlow === 'recovery';
+  const showAuth = !IS_DEMO && (forceRecovery || !user || !user.onboarding_completed);
   return (
     <NavigationContainer>
-      {forceRecovery || !user || !user.onboarding_completed ? (
+      {showAuth ? (
         <AuthNavigator
           key={forceRecovery ? 'recovery' : user ? 'onboarding' : 'login'}
           forceRecovery={forceRecovery}

@@ -1,0 +1,4 @@
+-r requirements.txt
+
+# Test-only dependencies (pytest + the HTTP client Starlette's TestClient needs).
+pytest==8.3.3

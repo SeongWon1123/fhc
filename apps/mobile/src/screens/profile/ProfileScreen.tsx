@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { BookOpen, Calendar, ChevronRight, HelpCircle, LogOut, Shield, User as UserIcon } from 'lucide-react-native';
 import { Image } from 'expo-image';
 import { Button } from '../../components/common/Button';
 import { supabase } from '../../lib/supabase';
+import { notify } from '../../lib/notify';
 import { useStore } from '../../lib/store';
 
 type Stats = {
@@ -46,7 +47,7 @@ export const ProfileScreen: React.FC = () => {
   };
 
   const handleSignOut = () => {
-    Alert.alert('로그아웃', '핏커넥트에서 로그아웃할까요?', [
+    notify('로그아웃', '핏커넥트에서 로그아웃할까요?', [
       { text: '취소', style: 'cancel' },
       {
         text: '로그아웃',
@@ -74,7 +75,7 @@ export const ProfileScreen: React.FC = () => {
       title: '개인정보 및 데이터',
       subtitle: '예약과 식단 기록에 저장되는 데이터 확인',
       onPress: () =>
-        Alert.alert(
+        notify(
           '개인정보 및 데이터',
           '핏커넥트는 서비스 제공을 위해 프로필, 예약, 식단 기록, 선택한 식사 이미지 데이터만 저장합니다. 데이터 삭제 요청은 지원 문의로 처리합니다.'
         ),
@@ -83,7 +84,7 @@ export const ProfileScreen: React.FC = () => {
       icon: HelpCircle,
       title: '지원 문의',
       subtitle: '계정, 예약, 데이터 요청 도움 받기',
-      onPress: () => Alert.alert('지원 문의', 'MVP 파일럿 기간에는 핏커넥트 운영팀 문의 채널로 연락해주세요.'),
+      onPress: () => notify('지원 문의', 'MVP 파일럿 기간에는 핏커넥트 운영팀 문의 채널로 연락해주세요.'),
     },
   ];
 

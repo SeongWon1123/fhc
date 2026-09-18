@@ -1,6 +1,11 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    /* Workspace package ships TypeScript source; resolve it by path so no
+       build or node_modules link is required. */
+    "paths": {
+      "@fitconnect/shared": ["../../packages/shared/src/index.ts"]
+    }
   }
 }

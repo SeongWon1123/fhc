@@ -1,4 +1,6 @@
-export type BookingStatus = 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'no_show';
+import type { BookingStatus } from '@fitconnect/shared';
+
+export type { BookingStatus };
 
 export interface Coach {
   id: string;

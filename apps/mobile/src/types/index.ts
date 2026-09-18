@@ -1,3 +1,7 @@
+import type { BookingStatus, SessionType } from '@fitconnect/shared';
+
+export type { BookingStatus, SessionType };
+
 export interface Coach {
   id: string;
   email: string;
@@ -30,8 +34,8 @@ export interface Booking {
   coach_id: string;
   scheduled_at: string;
   duration_minutes: number;
-  session_type: 'online' | 'offline';
-  status: 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'no_show';
+  session_type: SessionType;
+  status: BookingStatus;
   price: number;
   meeting_url?: string;
   notes?: string;
