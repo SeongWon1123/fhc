@@ -125,17 +125,10 @@ class TestWithoutFallback:
             chat = client.post("/api/v1/diet/chat", json={"message": "안녕"})
             assert chat.status_code == 401
 
-    def test_admin_overview_fails_closed_without_a_data_store(self, strict_app) -> None:
-        """`_require_admin_key` is a no-op outside production.
-
-        In a non-production environment without Supabase the admin overview
-        reports 503 rather than serving demo rows. This pins that behaviour: if
-        the admin console is ever exposed beyond local use, the missing
-        production key check is the thing to revisit.
-        """
+    def test_admin_overview_rejects_anonymous_callers(self, strict_app) -> None:
         with TestClient(strict_app.app, raise_server_exceptions=False) as client:
             response = client.get("/api/v1/admin/overview")
-            assert response.status_code == 503, response.text
+            assert response.status_code == 401, response.text
 
 
 class TestValidation:

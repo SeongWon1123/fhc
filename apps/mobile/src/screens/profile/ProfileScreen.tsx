@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { BookOpen, Calendar, ChevronRight, HelpCircle, LogOut, Shield, User as UserIcon } from 'lucide-react-native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { Award, BookOpen, Calendar, ChevronRight, HelpCircle, LogOut, Shield, User as UserIcon } from 'lucide-react-native';
 import { Image } from 'expo-image';
 import { Button } from '../../components/common/Button';
 import { supabase } from '../../lib/supabase';
@@ -9,37 +9,41 @@ import { notify } from '../../lib/notify';
 import { useStore } from '../../lib/store';
 
 type Stats = {
-  workouts: number;
-  dietLogs: number;
-  bookings: number;
+  workouts: number | null;
+  dietLogs: number | null;
+  bookings: number | null;
 };
+
+const countOf = (response: { count: number | null; error: unknown }) =>
+  response.error ? null : response.count ?? 0;
 
 export const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const { user, signOut } = useStore();
   const [stats, setStats] = useState<Stats>({
-    workouts: 0,
-    dietLogs: 0,
-    bookings: 0,
+    workouts: null,
+    dietLogs: null,
+    bookings: null,
   });
 
-  useEffect(() => {
-    fetchUserStats();
-  }, [user?.id]);
+  useFocusEffect(useCallback(() => {
+    void fetchUserStats();
+  }, [user?.id]));
 
   const fetchUserStats = async () => {
     if (!user) return;
 
     try {
-      const [bookingsResponse, dietLogsResponse] = await Promise.all([
+      const [bookingsResponse, dietLogsResponse, workoutsResponse] = await Promise.all([
         supabase.from('bookings').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
         supabase.from('diet_logs').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+        supabase.from('workout_logs').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
       ]);
 
       setStats({
-        workouts: 0,
-        dietLogs: dietLogsResponse.count ?? 0,
-        bookings: bookingsResponse.count ?? 0,
+        workouts: countOf(workoutsResponse),
+        dietLogs: countOf(dietLogsResponse),
+        bookings: countOf(bookingsResponse),
       });
     } catch (error) {
       console.error('사용자 통계를 불러오지 못했습니다:', error);
@@ -57,12 +61,22 @@ export const ProfileScreen: React.FC = () => {
     ]);
   };
 
+  const coachMenu = user?.role === 'user' || user?.role === 'coach'
+    ? [{
+      icon: Award,
+      title: user.role === 'coach' ? '코치 프로필 관리' : '코치로 활동하기',
+      subtitle: user.role === 'coach' ? '회원에게 보이는 전문 분야·가격·소개 수정' : '프로필을 작성하고 운영자 승인 신청',
+      onPress: () => navigation.navigate('CoachProfile'),
+    }]
+    : [];
+
   const menuItems = [
+    ...coachMenu,
     {
       icon: Calendar,
       title: '내 예약',
       subtitle: '예정된 코치 세션 확인',
-      onPress: () => navigation.navigate('Coaches', { screen: 'BookingList' }),
+      onPress: () => navigation.navigate('Bookings'),
     },
     {
       icon: BookOpen,
@@ -116,17 +130,17 @@ export const ProfileScreen: React.FC = () => {
 
         <View style={styles.statsContainer}>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stats.workouts}</Text>
+            <Text style={styles.statValue}>{stats.workouts ?? '-'}</Text>
             <Text style={styles.statLabel}>운동</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stats.dietLogs}</Text>
+            <Text style={styles.statValue}>{stats.dietLogs ?? '-'}</Text>
             <Text style={styles.statLabel}>식단</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stats.bookings}</Text>
+            <Text style={styles.statValue}>{stats.bookings ?? '-'}</Text>
             <Text style={styles.statLabel}>예약</Text>
           </View>
         </View>

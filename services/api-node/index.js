@@ -7,6 +7,8 @@ const { Server } = require('socket.io');
 const rateLimit = require('express-rate-limit');
 const winston = require('winston');
 const { assertProductionReady, csvEnv, productionConfigErrors } = require('./config');
+const { supabase } = require('./middleware/auth');
+const { configureRealtime } = require('./realtime');
 
 assertProductionReady();
 
@@ -49,30 +51,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/realtime', require('./routes/realtime'));
 
-// WebSocket: 예약 상태 실시간 업데이트
-io.on('connection', (socket) => {
-  logger.info(`Socket connected: ${socket.id}`);
-
-  socket.on('join_user_room', (userId) => {
-    socket.join(`user_${userId}`);
-    logger.info(`User ${userId} joined room`);
-  });
-
-  socket.on('join_coach_room', (coachId) => {
-    socket.join(`coach_${coachId}`);
-    logger.info(`Coach ${coachId} joined room`);
-  });
-
-  socket.on('booking_status_update', ({ bookingId, status, userId, coachId }) => {
-    io.to(`user_${userId}`).emit('booking_updated', { bookingId, status });
-    io.to(`coach_${coachId}`).emit('booking_updated', { bookingId, status });
-    logger.info(`Booking ${bookingId} status updated to ${status}`);
-  });
-
-  socket.on('disconnect', () => {
-    logger.info(`Socket disconnected: ${socket.id}`);
-  });
-});
+configureRealtime(io, supabase);
 
 // 상태 엔드포인트
 app.get('/', (req, res) => res.json({ message: 'FitConnect BFF v1.0', status: 'running' }));

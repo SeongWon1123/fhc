@@ -1,32 +1,15 @@
 import { CalendarCheck, Dumbbell, Shirt, Users } from 'lucide-react';
-import { useEffect, useState } from 'react';
 import BookingTable from '../components/BookingTable';
 import StatsCard from '../components/StatsCard';
-import type { Booking, ClothingFeedItem, Coach, Member } from '../data';
-import { loadOperationsData, type OperationsDataSource } from '../lib/operationsData';
+import { useOperationsData } from '../lib/operationsContext';
+import type { OperationsDataSource } from '../lib/operationsData';
 
 const sourceBadge: Record<OperationsDataSource, { className: string; label: string }> = {
   supabase: { className: 'success', label: 'Supabase 실데이터' },
-  'demo-fallback': { className: 'warning', label: '시연용 대체 데이터' },
-  empty: { className: 'danger', label: '연결 데이터 없음' },
 };
 
 export default function Dashboard() {
-  const [bookings, setBookings] = useState<Booking[]>([]);
-  const [clothingItems, setClothingItems] = useState<ClothingFeedItem[]>([]);
-  const [coaches, setCoaches] = useState<Coach[]>([]);
-  const [members, setMembers] = useState<Member[]>([]);
-  const [source, setSource] = useState<OperationsDataSource>('empty');
-
-  useEffect(() => {
-    loadOperationsData().then((data) => {
-      setBookings(data.bookings);
-      setClothingItems(data.clothingItems);
-      setCoaches(data.coaches);
-      setMembers(data.members);
-      setSource(data.source);
-    });
-  }, []);
+  const { bookings, clothingItems, coaches, members, source } = useOperationsData();
 
   const monthlyRevenue = bookings
     .filter((booking) => booking.status === 'completed' || booking.status === 'confirmed')

@@ -7,8 +7,7 @@ type SessionState = {
   loading: boolean;
   session: Session | null;
   /**
-   * Supabase env vars are absent. Auth cannot be enforced, so the console
-   * stays reachable and the UI tells the operator why.
+   * Supabase env vars are absent; the console stays blocked.
    */
   unconfigured: boolean;
 };
@@ -46,7 +45,7 @@ export function useSession(): SessionState {
         setState({ loading: false, session, unconfigured: false });
       })
       .catch(() => {
-        if (!active) return;
+        if (!active || settled) return;
         setState({ loading: false, session: null, unconfigured: false });
       });
 

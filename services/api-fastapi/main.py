@@ -20,6 +20,7 @@ app.add_middleware(
     allow_credentials="*" not in cors_origins,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["X-Booking-Notification"],
 )
 
 app.include_router(coaches.router, prefix="/api/v1")

@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from threading import Lock
 from uuid import UUID, uuid4
+
+from app.models.booking import BookingStatusUpdate
+from app.services.booking_rules import BookingConflictError, ensure_booking_update, overlaps
+
+
+_BOOKING_LOCK = Lock()
 
 
 DEMO_USER_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -249,7 +256,10 @@ def create_booking(booking: dict, user_id: str | UUID) -> dict:
         "notes": booking.get("notes"),
         "created_at": now_iso(),
     }
-    _BOOKINGS.append(item)
+    with _BOOKING_LOCK:
+        if any(overlaps(existing, item) for existing in _BOOKINGS):
+            raise BookingConflictError("Time slot already booked")
+        _BOOKINGS.append(item)
     return item
 
 
@@ -304,20 +314,23 @@ def sample_admin_bookings() -> list[dict]:
 def update_booking_status(
     booking_id: str | UUID,
     user_id: str | UUID,
-    status: str,
-    coach_notes: str | None = None,
+    update: BookingStatusUpdate,
 ) -> dict | None:
     booking_id = str(booking_id)
     user_id = str(user_id)
-    for booking in _BOOKINGS:
-        if booking["id"] != booking_id:
-            continue
-        if user_id not in {booking["user_id"], booking["coach_id"]}:
-            raise PermissionError("Not authorized")
-        booking["status"] = status
-        if coach_notes:
-            booking["coach_notes"] = coach_notes
-        return booking
+    with _BOOKING_LOCK:
+        for booking in _BOOKINGS:
+            if booking["id"] != booking_id:
+                continue
+            ensure_booking_update(booking, user_id, update)
+            candidate = {**booking, "status": update.status}
+            if candidate["status"] in {"pending", "confirmed"} and any(
+                existing["id"] != booking_id and overlaps(existing, candidate)
+                for existing in _BOOKINGS
+            ):
+                raise BookingConflictError("Time slot already booked")
+            booking.update(update.model_dump(exclude_unset=True))
+            return booking
     return None
 
 

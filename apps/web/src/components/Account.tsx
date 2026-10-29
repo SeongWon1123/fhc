@@ -5,7 +5,6 @@ import { isSupabaseConfigured, supabase } from '../supabaseClient';
 export default function Account({ session }: { session: Session }) {
   const [loading, setLoading] = useState(true);
   const [username, setUsername] = useState<string | null>(null);
-  const [role, setRole] = useState<'user' | 'coach'>('user');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -21,7 +20,7 @@ export default function Account({ session }: { session: Session }) {
       const { user } = session;
       const { data, error } = await supabase
         .from('profiles')
-        .select('full_name, avatar_url, role')
+        .select('full_name, avatar_url')
         .eq('id', user.id)
         .single();
 
@@ -31,7 +30,6 @@ export default function Account({ session }: { session: Session }) {
         } else if (data) {
           setUsername(data.full_name);
           setAvatarUrl(data.avatar_url);
-          setRole(data.role || 'user');
         }
         setLoading(false);
       }
@@ -58,7 +56,6 @@ export default function Account({ session }: { session: Session }) {
       id: user.id,
       full_name: username,
       avatar_url: avatarUrl,
-      role,
       updated_at: new Date().toISOString(),
     };
 
@@ -84,19 +81,6 @@ export default function Account({ session }: { session: Session }) {
           style={{ width: '100%', marginTop: 6 }}
         />
       </label>
-      <label>
-        역할
-        <select
-          className="select-field"
-          value={role}
-          onChange={(event) => setRole(event.target.value as 'user' | 'coach')}
-          style={{ width: '100%', marginTop: 6 }}
-        >
-          <option value="user">회원</option>
-          <option value="coach">코치</option>
-        </select>
-      </label>
-
       <button className="text-button primary" type="submit" disabled={loading}>
         {loading ? '불러오는 중...' : '수정하기'}
       </button>

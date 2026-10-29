@@ -64,6 +64,7 @@ export const Input: React.FC<InputProps> = ({
           onBlur={() => setIsFocused(false)}
           style={[styles.input, style]}
           placeholderTextColor="#9ca3af"
+          accessibilityLabel={label}
           {...props}
         />
       </View>

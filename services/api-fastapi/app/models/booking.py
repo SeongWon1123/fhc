@@ -24,6 +24,11 @@ class BookingStatusUpdate(BaseModel):
     coach_notes: str | None = None
 
 
+class ReviewCreate(BaseModel):
+    rating: int = Field(ge=1, le=5)
+    content: str | None = Field(default=None, max_length=500)
+
+
 class BookingResponse(BaseModel):
     id: UUID
     user_id: UUID

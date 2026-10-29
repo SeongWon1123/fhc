@@ -1,16 +1,37 @@
-from pydantic import BaseModel
-from typing import Optional, List
+from pydantic import BaseModel, Field, field_validator
+from typing import Annotated, Literal, Optional, List
 from uuid import UUID
 
+Weekday = Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+HourlySlots = Annotated[
+    list[Annotated[str, Field(pattern=r"^([01]\d|2[0-3]):00$")]],
+    Field(max_length=24),
+]
+
 class CoachDetailUpdate(BaseModel):
-    specialty: Optional[List[str]] = None
-    biography: Optional[str] = None
-    experience_years: Optional[int] = None
-    qualifications: Optional[List[str]] = None
-    base_price: Optional[int] = None
-    location: Optional[str] = None
+    name: Optional[str] = Field(None, min_length=1, max_length=50)
+    specialty: Optional[List[str]] = Field(None, min_length=1, max_length=5)
+    biography: Optional[str] = Field(None, max_length=1000)
+    experience_years: Optional[int] = Field(None, ge=0, le=60)
+    qualifications: Optional[List[str]] = Field(None, max_length=10)
+    base_price: Optional[int] = Field(None, ge=0, le=1_000_000)
+    location: Optional[str] = Field(None, max_length=100)
     is_online_available: Optional[bool] = None
+    is_offline_available: Optional[bool] = None
     video_url: Optional[str] = None
+    weekly_availability: dict[Weekday, HourlySlots] | None = None
+
+    @field_validator("weekly_availability")
+    @classmethod
+    def normalize_weekly_availability(
+        cls, value: dict[Weekday, list[str]] | None,
+    ) -> dict[Weekday, list[str]] | None:
+        if value is None:
+            return None
+        for slots in value.values():
+            if len(slots) != len(set(slots)):
+                raise ValueError("Hourly start times must be unique")
+        return {day: sorted(slots) for day, slots in value.items()}
 
 class CoachListResponse(BaseModel):
     id: UUID

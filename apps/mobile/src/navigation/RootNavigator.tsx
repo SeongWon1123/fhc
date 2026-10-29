@@ -8,6 +8,7 @@ import { useStore } from '../lib/store';
 import { DEMO_USER, IS_DEMO } from '../lib/demo';
 import AuthNavigator from './AuthNavigator';
 import MainTabNavigator from './MainTabNavigator';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 export default function RootNavigator() {
   const { user, isLoading, setUser, setLoading, fetchProfile } = useStore();
@@ -61,16 +62,21 @@ export default function RootNavigator() {
       void handleIncomingUrl(url);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         if (!isMounted) return;
-        setLoading(true);
-        if (session?.user) {
-          await fetchProfile(session.user.id, session.user.email ?? undefined);
-        } else {
-          if (event === 'SIGNED_OUT') setAuthFlow(null);
-          setUser(null);
-        }
-        if (isMounted) setLoading(false);
+        // Return synchronously: profile requests also need the Auth lock.
+        // Awaiting them from this callback deadlocks session hydration.
+        void (async () => {
+          if (event === 'TOKEN_REFRESHED') return;
+          setLoading(true);
+          if (session?.user) {
+            await fetchProfile(session.user.id, session.user.email ?? undefined);
+          } else {
+            if (event === 'SIGNED_OUT') setAuthFlow(null);
+            setUser(null);
+          }
+          if (isMounted) setLoading(false);
+        })();
       }
     );
 
@@ -98,6 +104,7 @@ export default function RootNavigator() {
   const forceRecovery = authFlow === 'recovery';
   const showAuth = !IS_DEMO && (forceRecovery || !user || !user.onboarding_completed);
   return (
+    <SafeAreaProvider>
     <NavigationContainer>
       {showAuth ? (
         <AuthNavigator
@@ -107,8 +114,9 @@ export default function RootNavigator() {
           onDismissAuthMessage={() => setAuthMessage(null)}
         />
       ) : (
-        <MainTabNavigator />
+        <MainTabNavigator key={user?.id} />
       )}
     </NavigationContainer>
+    </SafeAreaProvider>
   );
 }

@@ -1,8 +1,11 @@
 -- FitConnect schema bootstrap.
 -- Runs on Supabase Postgres and on the local docker-compose postgres service.
+-- Supabase SQL Editor: run this entire file, not only the GRANT statements.
+-- Tables, RLS policies and explicit API grants are all included.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS btree_gist;
 
 CREATE SCHEMA IF NOT EXISTS auth;
 
@@ -121,6 +124,10 @@ CREATE TABLE IF NOT EXISTS coach_details (
     CONSTRAINT coach_details_base_price_check CHECK (base_price IS NULL OR base_price >= 0)
 );
 
+-- Membership and coach assignment are server-managed tenant boundaries.
+ALTER TABLE profiles
+    ADD COLUMN IF NOT EXISTS gym_id UUID REFERENCES gyms(id) ON DELETE SET NULL;
+
 ALTER TABLE coach_details
     ADD COLUMN IF NOT EXISTS name TEXT,
     ADD COLUMN IF NOT EXISTS specialty TEXT[],
@@ -137,6 +144,24 @@ ALTER TABLE coach_details
     ADD COLUMN IF NOT EXISTS review_count INTEGER DEFAULT 0,
     ADD COLUMN IF NOT EXISTS booking_count INTEGER DEFAULT 0,
     ADD COLUMN IF NOT EXISTS gym_id UUID REFERENCES gyms(id) ON DELETE SET NULL;
+
+-- Bookable hourly start times per weekday in Korea time (Asia/Seoul).
+-- The default keeps the original fixed booking timetable for existing coaches.
+ALTER TABLE coach_details
+    ADD COLUMN IF NOT EXISTS weekly_availability JSONB NOT NULL DEFAULT '{
+        "mon": ["09:00","10:00","11:00","12:00","14:00","15:00","16:00","17:00","18:00","19:00"],
+        "tue": ["09:00","10:00","11:00","12:00","14:00","15:00","16:00","17:00","18:00","19:00"],
+        "wed": ["09:00","10:00","11:00","12:00","14:00","15:00","16:00","17:00","18:00","19:00"],
+        "thu": ["09:00","10:00","11:00","12:00","14:00","15:00","16:00","17:00","18:00","19:00"],
+        "fri": ["09:00","10:00","11:00","12:00","14:00","15:00","16:00","17:00","18:00","19:00"],
+        "sat": ["09:00","10:00","11:00","12:00","14:00","15:00","16:00","17:00","18:00","19:00"],
+        "sun": ["09:00","10:00","11:00","12:00","14:00","15:00","16:00","17:00","18:00","19:00"]
+    }'::jsonb;
+
+ALTER TABLE coach_details DROP CONSTRAINT IF EXISTS coach_details_weekly_availability_check;
+ALTER TABLE coach_details
+    ADD CONSTRAINT coach_details_weekly_availability_check
+    CHECK (jsonb_typeof(weekly_availability) = 'object');
 
 ALTER TABLE coach_details DROP CONSTRAINT IF EXISTS coach_details_rating_check;
 ALTER TABLE coach_details
@@ -232,6 +257,33 @@ ALTER TABLE bookings
     ADD COLUMN IF NOT EXISTS coach_notes TEXT,
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+ALTER TABLE bookings
+    ADD COLUMN IF NOT EXISTS gym_id UUID REFERENCES gyms(id) ON DELETE SET NULL;
+
+UPDATE bookings AS booking
+SET gym_id = coach.gym_id
+FROM coach_details AS coach
+WHERE booking.coach_id = coach.id AND booking.gym_id IS NULL;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'bookings_no_active_overlap' AND conrelid = 'bookings'::regclass
+    ) THEN
+        -- Fails rather than silently deleting/rescheduling existing overlaps.
+        ALTER TABLE bookings ADD CONSTRAINT bookings_no_active_overlap
+        EXCLUDE USING gist (
+            coach_id WITH =,
+            tsrange(
+                scheduled_at AT TIME ZONE 'UTC',
+                (scheduled_at AT TIME ZONE 'UTC') + duration_minutes * INTERVAL '1 minute',
+                '[)'
+            ) WITH &&
+        ) WHERE (status IN ('pending', 'confirmed'));
+    END IF;
+END $$;
 
 DO $$
 BEGIN
@@ -404,6 +456,57 @@ CREATE TRIGGER trg_bookings_updated
 BEFORE UPDATE ON bookings
 FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
+CREATE OR REPLACE FUNCTION lock_booking_coach_slot()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- Serialize inserts before either transaction enters the GiST index.
+    -- The exclusion constraint remains the authority for all writes/updates.
+    PERFORM pg_advisory_xact_lock(hashtextextended(NEW.coach_id::text, 0));
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_booking_slot_lock ON bookings;
+CREATE TRIGGER trg_booking_slot_lock
+BEFORE INSERT ON bookings
+FOR EACH ROW EXECUTE FUNCTION lock_booking_coach_slot();
+
+CREATE OR REPLACE FUNCTION protect_profile_assignment()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF current_user IN ('anon', 'authenticated') THEN
+        IF TG_OP = 'INSERT' THEN
+            IF NEW.role IS DISTINCT FROM 'user' OR NEW.gym_id IS NOT NULL THEN
+                RAISE EXCEPTION 'Profile role and gym assignment are server-managed' USING ERRCODE = '42501';
+            END IF;
+        ELSIF NEW.role IS DISTINCT FROM OLD.role OR NEW.gym_id IS DISTINCT FROM OLD.gym_id THEN
+            RAISE EXCEPTION 'Profile role and gym assignment are server-managed' USING ERRCODE = '42501';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_profile_assignment ON profiles;
+CREATE TRIGGER trg_profile_assignment
+BEFORE INSERT OR UPDATE ON profiles
+FOR EACH ROW EXECUTE FUNCTION protect_profile_assignment();
+
+-- booking_count is the number of completed sessions; repair any drift on every run.
+UPDATE coach_details cd
+SET booking_count = counted.total
+FROM (
+    SELECT details.id, COUNT(b.id) FILTER (WHERE b.status = 'completed') AS total
+    FROM coach_details details
+    LEFT JOIN bookings b ON b.coach_id = details.id
+    GROUP BY details.id
+) counted
+WHERE cd.id = counted.id AND cd.booking_count IS DISTINCT FROM counted.total;
+
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE coach_details ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workout_logs ENABLE ROW LEVEL SECURITY;
@@ -419,7 +522,8 @@ ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "profiles_read_all" ON profiles;
 DROP POLICY IF EXISTS "Public profiles are viewable by everyone" ON profiles;
-CREATE POLICY "profiles_read_all" ON profiles FOR SELECT USING (TRUE);
+DROP POLICY IF EXISTS "profiles_read_own" ON profiles;
+CREATE POLICY "profiles_read_own" ON profiles FOR SELECT USING (auth.uid() = id);
 
 DROP POLICY IF EXISTS "profiles_insert_own" ON profiles;
 CREATE POLICY "profiles_insert_own" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
@@ -432,10 +536,7 @@ DROP POLICY IF EXISTS "coach_details_read_all" ON coach_details;
 CREATE POLICY "coach_details_read_all" ON coach_details FOR SELECT USING (TRUE);
 
 DROP POLICY IF EXISTS "coach_details_insert_own" ON coach_details;
-CREATE POLICY "coach_details_insert_own" ON coach_details FOR INSERT WITH CHECK (auth.uid() = id);
-
 DROP POLICY IF EXISTS "coach_details_update_own" ON coach_details;
-CREATE POLICY "coach_details_update_own" ON coach_details FOR UPDATE USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
 
 DROP POLICY IF EXISTS "workout_logs_own" ON workout_logs;
 CREATE POLICY "workout_logs_own" ON workout_logs FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
@@ -456,19 +557,14 @@ DROP POLICY IF EXISTS "bookings_user_select" ON bookings;
 CREATE POLICY "bookings_user_select" ON bookings FOR SELECT USING (auth.uid() = user_id OR auth.uid() = coach_id);
 
 DROP POLICY IF EXISTS "bookings_user_insert" ON bookings;
-CREATE POLICY "bookings_user_insert" ON bookings FOR INSERT WITH CHECK (auth.uid() = user_id);
-
 DROP POLICY IF EXISTS "bookings_user_update" ON bookings;
-CREATE POLICY "bookings_user_update" ON bookings FOR UPDATE USING (auth.uid() = user_id OR auth.uid() = coach_id);
 
 DROP POLICY IF EXISTS "payments_user_select" ON payments;
 CREATE POLICY "payments_user_select" ON payments FOR SELECT USING (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS "payments_service_insert" ON payments;
-CREATE POLICY "payments_service_insert" ON payments FOR INSERT WITH CHECK (TRUE);
-
 DROP POLICY IF EXISTS "payments_service_update" ON payments;
-CREATE POLICY "payments_service_update" ON payments FOR UPDATE USING (TRUE) WITH CHECK (TRUE);
+-- Server service-role clients bypass RLS. No client write policy is required.
 
 DROP POLICY IF EXISTS "reviews_read_all" ON reviews;
 CREATE POLICY "reviews_read_all" ON reviews FOR SELECT USING (TRUE);
@@ -489,13 +585,46 @@ DROP POLICY IF EXISTS "rag_read_all" ON rag_documents;
 CREATE POLICY "rag_read_all" ON rag_documents FOR SELECT USING (TRUE);
 
 DROP POLICY IF EXISTS "rag_service_insert" ON rag_documents;
-CREATE POLICY "rag_service_insert" ON rag_documents FOR INSERT WITH CHECK (TRUE);
-
 DROP POLICY IF EXISTS "rag_service_update" ON rag_documents;
-CREATE POLICY "rag_service_update" ON rag_documents FOR UPDATE USING (TRUE) WITH CHECK (TRUE);
+
+DO $$
+DECLARE
+    client_role TEXT;
+BEGIN
+    FOREACH client_role IN ARRAY ARRAY['anon', 'authenticated']
+    LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = client_role) THEN
+            EXECUTE format(
+                'REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON payments, rag_documents, bookings, coach_details FROM %I',
+                client_role
+            );
+            EXECUTE format('REVOKE TRUNCATE, REFERENCES, TRIGGER ON profiles FROM %I', client_role);
+        END IF;
+    END LOOP;
+END $$;
 
 DROP POLICY IF EXISTS "notifications_own" ON notifications;
 CREATE POLICY "notifications_own" ON notifications FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- New Supabase projects may disable automatic table grants.
+-- Keep this after table creation; RLS alone does not grant table access.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+        GRANT USAGE ON SCHEMA public TO service_role;
+        GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
+            profiles, gyms, coach_details, workout_logs, diet_logs, bookings,
+            payments, reviews, chat_messages, clothing_recommendations,
+            rag_documents, notifications
+        TO service_role;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+        GRANT USAGE ON SCHEMA public TO authenticated;
+        GRANT SELECT, INSERT, UPDATE ON TABLE profiles TO authenticated;
+        GRANT SELECT ON TABLE bookings, diet_logs, workout_logs TO authenticated;
+    END IF;
+END $$;
 
 DO $$
 BEGIN

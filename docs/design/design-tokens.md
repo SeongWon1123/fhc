@@ -149,3 +149,22 @@ Charts should include tooltips, readable axes, and no decorative 3D effects.
 - Web TypeScript: use `apps/web/src/design-tokens.ts` for future component-local style constants, chart colors, or shared docs tooling.
 - Mobile: add a future `apps/mobile/src/theme/tokens.ts` before broad refactors. New mobile screens should consume the same semantic names from this document.
 - Any token exception must be documented in the relevant screen or component PR.
+
+## Booking Management And Live Updates
+
+- Booking actions use the canonical mobile subset in `apps/mobile/src/theme/tokens.ts`.
+  Booking body text and field labels use 17px for touch-screen readability; secondary text uses 15px.
+- The booking tab is available to members and coaches. Coaches start on received bookings and can switch
+  to their own requests. A selected role uses a soft fill plus a check, not an accent border.
+- Booking cards keep their summary and place management controls directly underneath, without nested cards.
+  Confirmation appears inline with a visible return action; destructive confirmation uses `danger`.
+- Coach notes are labeled, multiline, and saved with an allowed state change. Terminal bookings are read-only.
+- Live updates use a dismissible, polite announcement above navigation. Connection failures remain visible;
+  list refresh remains available. New booking UI introduces no timed toast dismissal or decorative animation.
+- The existing app has a light-only interface. Booking surfaces preserve it when the OS requests dark mode;
+  this change does not introduce an app-wide theme migration.
+- New booking copy uses `KoreanText`: web `word-break: keep-all` with a long-token fallback,
+  and iOS `hangul-word` line breaking. Error and status messages must not split Korean words.
+- The authenticated navigation shell owns the top safe-area inset. Its child inset context has `top: 0`;
+  booking screens consume only side insets and the tab navigator owns the bottom inset.
+  The live banner remains below the status bar without adding a second top gap to the list.

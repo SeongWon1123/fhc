@@ -2,6 +2,7 @@ import React from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { CheckCircle, MapPin, Star } from 'lucide-react-native';
 import { Coach } from '../types';
+import { sportLabel } from '../lib/coachProfile';
 
 interface CoachCardProps {
   coach: Coach;
@@ -26,7 +27,7 @@ export const CoachCard: React.FC<CoachCardProps> = ({ coach, onPress }) => {
         </View>
 
         <Text style={styles.specialty} numberOfLines={1}>
-          {details.specialty?.join(', ') || '일반 피트니스'}
+          {details.specialty?.map(sportLabel).join(', ') || '일반 피트니스'}
         </Text>
 
         <View style={styles.metaRow}>

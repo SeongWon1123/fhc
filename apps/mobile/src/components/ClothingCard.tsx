@@ -15,6 +15,7 @@ const categoryLabel = (category: string) => {
     'crossfit-shoes': '크로스핏 신발',
     'pilates-bottom': '필라테스 하의',
     'running-shoes': '러닝화',
+    'running-bottom': '러닝 하의',
     'yoga-accessory': '요가 소품',
     gym: '헬스',
     running: '러닝',
@@ -42,6 +43,11 @@ export const ClothingCard: React.FC<ClothingCardProps> = ({ item, onPress }) => 
             <Text style={styles.discountText}>{discountPercentage}% 할인</Text>
           </View>
         )}
+        {(item.commission_rate ?? 0) > 0 && (
+          <View style={styles.affiliateBadge}>
+            <Text style={styles.affiliateText}>제휴</Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.content}>
@@ -49,10 +55,14 @@ export const ClothingCard: React.FC<ClothingCardProps> = ({ item, onPress }) => 
         <Text style={styles.name} numberOfLines={2}>{item.name}</Text>
 
         <View style={styles.priceContainer}>
-          {item.original_price ? (
+          {item.price > 0 && item.original_price ? (
             <Text style={styles.originalPrice}>{item.original_price.toLocaleString('ko-KR')}원</Text>
           ) : null}
-          <Text style={styles.price}>{item.price.toLocaleString('ko-KR')}원</Text>
+          {item.price > 0 ? (
+            <Text style={styles.price}>{item.price.toLocaleString('ko-KR')}원</Text>
+          ) : (
+            <Text style={styles.priceHint}>쇼핑몰에서 가격 확인</Text>
+          )}
         </View>
 
         <View style={styles.footer}>
@@ -91,6 +101,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 999,
+  },
+  affiliateBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: '#111827',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  affiliateText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  priceHint: {
+    fontSize: 13,
+    color: '#6b7280',
   },
   discountText: {
     fontSize: 10,

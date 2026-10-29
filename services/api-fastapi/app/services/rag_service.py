@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 from typing import List, Tuple
 
 import httpx
@@ -7,6 +8,8 @@ import httpx
 from app.config import settings
 from app.database import get_optional_supabase
 
+
+logger = logging.getLogger(__name__)
 
 OLLAMA_UNAVAILABLE_MESSAGE = (
     "The AI nutrition service is temporarily unavailable. "
@@ -43,6 +46,43 @@ async def _ollama_chat(messages: List[dict]) -> str:
         return OLLAMA_UNAVAILABLE_MESSAGE
     except Exception:
         return OLLAMA_UNAVAILABLE_MESSAGE
+
+
+async def _openai_compatible_chat(messages: List[dict]) -> str:
+    base_url = settings.chat_api_base_url.strip().rstrip("/")
+    if not (base_url and settings.chat_api_key.strip() and settings.chat_api_model.strip()):
+        logger.warning("Diet chat API is not configured: set CHAT_API_BASE_URL, CHAT_API_KEY, CHAT_API_MODEL")
+        return OLLAMA_UNAVAILABLE_MESSAGE
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"{base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {settings.chat_api_key.strip()}"},
+                json={
+                    "model": settings.chat_api_model.strip(),
+                    "messages": messages,
+                    "temperature": 0.7,
+                    "max_tokens": 800,
+                },
+            )
+            resp.raise_for_status()
+            content = resp.json()["choices"][0]["message"]["content"]
+    except httpx.HTTPStatusError as exc:
+        logger.warning("Diet chat API returned HTTP %s", exc.response.status_code)
+        return OLLAMA_UNAVAILABLE_MESSAGE
+    except Exception as exc:
+        logger.warning("Diet chat API request failed: %s", type(exc).__name__)
+        return OLLAMA_UNAVAILABLE_MESSAGE
+    if not isinstance(content, str) or not content.strip():
+        logger.warning("Diet chat API returned an empty reply")
+        return OLLAMA_UNAVAILABLE_MESSAGE
+    return content
+
+
+async def _chat(messages: List[dict]) -> str:
+    if settings.chat_provider == "openai_compatible":
+        return await _openai_compatible_chat(messages)
+    return await _ollama_chat(messages)
 
 
 async def _ollama_vision(image_b64: str, prompt: str) -> str:
@@ -123,7 +163,7 @@ Rules:
             *history[-6:],
             {"role": "user", "content": user_message},
         ]
-        reply = await _ollama_chat(messages)
+        reply = await _chat(messages)
         return reply, sources
     except Exception:
         return OLLAMA_UNAVAILABLE_MESSAGE, []

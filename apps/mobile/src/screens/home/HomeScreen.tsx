@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   SafeAreaView,
@@ -8,10 +8,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Dumbbell, Shirt, TrendingUp, Utensils } from 'lucide-react-native';
 import { CoachCard } from '../../components/CoachCard';
 import { api } from '../../lib/api';
+import { countTodayBookings, countTodayMeals } from '../../lib/homeStats';
 import { useStore } from '../../lib/store';
 import { Coach } from '../../types';
 
@@ -20,20 +21,62 @@ export const HomeScreen: React.FC = () => {
   const { user } = useStore();
   const [coaches, setCoaches] = useState<Coach[]>([]);
   const [loading, setLoading] = useState(false);
+  const [todayBookings, setTodayBookings] = useState<number | null>(null);
+  const [todayMeals, setTodayMeals] = useState<number | null>(null);
+  const role = user?.role === 'coach' ? 'coach' : 'user';
 
-  useEffect(() => {
-    fetchRecommendedCoaches();
-  }, []);
+  const coachesLoaded = useRef(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      void fetchRecommendedCoaches();
+    }, [])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      setTodayBookings(null);
+      setTodayMeals(null);
+      const toList = (data: any, key: string) => {
+        const list = Array.isArray(data) ? data : data?.items ?? data?.[key];
+        return Array.isArray(list) ? list : null;
+      };
+      api
+        .get('/bookings/my', { params: { role } })
+        .then(({ data }) => {
+          const list = toList(data, 'bookings');
+          if (active) setTodayBookings(list ? countTodayBookings(list, new Date()) : null);
+        })
+        .catch(() => {
+          if (active) setTodayBookings(null);
+        });
+      api
+        .get('/diet/logs', { params: { limit: 100 } })
+        .then(({ data }) => {
+          const list = toList(data, 'logs');
+          if (active) setTodayMeals(list ? countTodayMeals(list, new Date()) : null);
+        })
+        .catch(() => {
+          if (active) setTodayMeals(null);
+        });
+      return () => {
+        active = false;
+      };
+    }, [role])
+  );
 
   const fetchRecommendedCoaches = async () => {
-    setLoading(true);
+    // Only the first load shows the spinner; refocus refreshes cards in place.
+    if (!coachesLoaded.current) setLoading(true);
     try {
       const { data } = await api.get('/coaches/recommended');
       const nextCoaches = Array.isArray(data) ? data : data?.items ?? data?.coaches;
       setCoaches(Array.isArray(nextCoaches) ? nextCoaches.slice(0, 2) : []);
+      coachesLoaded.current = true;
     } catch (error) {
       console.error('추천 코치를 불러오지 못했습니다:', error);
-      setCoaches([]);
+      if (!coachesLoaded.current) setCoaches([]);
     } finally {
       setLoading(false);
     }
@@ -61,16 +104,12 @@ export const HomeScreen: React.FC = () => {
           </View>
           <View style={styles.workoutSummary}>
             <View style={styles.summaryItem}>
-              <Text style={styles.summaryValue}>1</Text>
-              <Text style={styles.summaryLabel}>예약</Text>
+              <Text style={styles.summaryValue}>{todayBookings ?? '-'}</Text>
+              <Text style={styles.summaryLabel}>오늘 예약</Text>
             </View>
             <View style={styles.summaryItem}>
-              <Text style={styles.summaryValue}>2</Text>
-              <Text style={styles.summaryLabel}>식사</Text>
-            </View>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryValue}>82%</Text>
-              <Text style={styles.summaryLabel}>계획 적합도</Text>
+              <Text style={styles.summaryValue}>{todayMeals ?? '-'}</Text>
+              <Text style={styles.summaryLabel}>오늘 식사</Text>
             </View>
           </View>
           <TouchableOpacity

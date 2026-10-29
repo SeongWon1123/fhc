@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   RefreshControl,
   SafeAreaView,
@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Calendar, Plus } from 'lucide-react-native';
 import { DietLogCard } from '../../components/DietLogCard';
 import { Loading } from '../../components/common/Loading';
@@ -26,23 +26,27 @@ export const DietLogScreen: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    fetchDietLogs();
-  }, []);
-
-  const fetchDietLogs = async () => {
+  const fetchDietLogs = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     try {
-      const { data } = await api.get('/diet/logs');
+      const { data } = await api.get('/diet/logs', { signal });
+      if (signal?.aborted) return;
       const nextLogs = Array.isArray(data) ? data : data?.items ?? data?.logs;
       setDietLogs(Array.isArray(nextLogs) ? nextLogs : []);
     } catch (error) {
+      if (signal?.aborted) return;
       console.error('식단 기록을 불러오지 못했습니다:', error);
       setDietLogs([]);
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
-  };
+  }, []);
+
+  useFocusEffect(useCallback(() => {
+    const controller = new AbortController();
+    void fetchDietLogs(controller.signal);
+    return () => controller.abort();
+  }, [fetchDietLogs]));
 
   const onRefresh = async () => {
     setRefreshing(true);

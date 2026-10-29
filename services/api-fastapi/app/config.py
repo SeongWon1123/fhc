@@ -1,15 +1,24 @@
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     database_url: str = "postgresql://postgres:password@localhost:5432/fitconnect"
     redis_url: str = "redis://localhost:6379/0"
+    bff_internal_url: str = "http://localhost:3000"
     supabase_url: str = ""
     supabase_service_role_key: str = ""
     ollama_base_url: str = "http://localhost:11434"
     ollama_chat_model: str = "gemma4:e4b"
     ollama_embed_model: str = "nomic-embed-text"
     ollama_vision_model: str = "llava:7b"
+    # Diet chat model. "openai_compatible" sends POST {base}/chat/completions
+    # and works with any OpenAI-compatible hosted API (OpenAI, Gemini, DeepSeek ...).
+    chat_provider: Literal["ollama", "openai_compatible"] = "ollama"
+    chat_api_base_url: str = ""
+    chat_api_key: str = ""
+    chat_api_model: str = ""
     jwt_secret: str = "fitconnect-secret"
     admin_api_key: str = ""
     environment: str = "development"
@@ -67,6 +76,15 @@ class Settings(BaseSettings):
         for name, value in required.items():
             if self.is_placeholder(value):
                 errors.append(f"{name} is missing or still uses a placeholder")
+
+        if self.chat_provider == "openai_compatible":
+            for name, value in {
+                "CHAT_API_BASE_URL": self.chat_api_base_url,
+                "CHAT_API_KEY": self.chat_api_key,
+                "CHAT_API_MODEL": self.chat_api_model,
+            }.items():
+                if self.is_placeholder(value):
+                    errors.append(f"{name} is required when CHAT_PROVIDER=openai_compatible")
 
         if self.enable_demo_fallback:
             errors.append("ENABLE_DEMO_FALLBACK must be false in production")

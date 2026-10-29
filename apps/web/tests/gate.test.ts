@@ -24,9 +24,25 @@ describe('operator console access rule', () => {
     );
   });
 
-  test('admits an authenticated operator', () => {
-    expect(decideGate({ loading: false, unconfigured: false, hasSession: true })).toBe(
+  test('does not admit a session before server verification', () => {
+    expect(decideGate({ loading: false, unconfigured: false, hasSession: true })).toBe('loading');
+  });
+
+  test('admits a server authorized operator', () => {
+    expect(decideGate({ loading: false, unconfigured: false, hasSession: true, access: 'allowed' })).toBe(
       'authenticated',
     );
+  });
+
+  test.each(['denied', 'failed', 'unauthenticated'] as const)('blocks server access outcome %s', (access) => {
+    expect(decideGate({ loading: false, unconfigured: false, hasSession: true, access })).toBe(access);
+  });
+
+  test('discards operator authorization when the session ends', () => {
+    expect(decideGate({ loading: false, unconfigured: false, hasSession: false, access: 'allowed' })).toBe('unauthenticated');
+  });
+
+  test('configuration failure overrides previously authorized access', () => {
+    expect(decideGate({ loading: false, unconfigured: true, hasSession: true, access: 'allowed' })).toBe('unconfigured');
   });
 });

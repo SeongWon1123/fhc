@@ -1,18 +1,19 @@
 from typing import Any
-from uuid import uuid4
+from typing import Literal
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
 
 class ChatRequest(BaseModel):
-    session_id: str = Field(default_factory=lambda: str(uuid4()))
+    session_id: UUID = Field(default_factory=uuid4)
     message: str = Field(min_length=1)
     context_type: str = "diet"
 
 
 class ChatResponse(BaseModel):
     reply: str
-    session_id: str
+    session_id: UUID
     sources: list[str] = Field(default_factory=list)
 
 
@@ -25,7 +26,7 @@ class DietAnalysisResponse(BaseModel):
 
 
 class DietLogCreate(BaseModel):
-    meal_type: str
+    meal_type: Literal["breakfast", "lunch", "dinner", "snack"]
     food_name: str
     calories: int = Field(ge=0)
     macronutrients: dict[str, Any]

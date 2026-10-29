@@ -1,8 +1,8 @@
 import { ClipboardCheck, Filter } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import BookingTable from '../components/BookingTable';
-import type { Booking, BookingStatus } from '../data';
-import { loadBookings } from '../lib/operationsData';
+import type { BookingStatus } from '../data';
+import { useOperationsData } from '../lib/operationsContext';
 
 const statusFilters: Array<BookingStatus | 'all'> = ['all', 'pending', 'confirmed', 'completed', 'cancelled'];
 const filterLabel: Record<BookingStatus | 'all', string> = {
@@ -16,11 +16,7 @@ const filterLabel: Record<BookingStatus | 'all', string> = {
 
 export default function Bookings() {
   const [activeFilter, setActiveFilter] = useState<BookingStatus | 'all'>('all');
-  const [bookings, setBookings] = useState<Booking[]>([]);
-
-  useEffect(() => {
-    loadBookings().then(setBookings);
-  }, []);
+  const { bookings } = useOperationsData();
 
   const filteredBookings = useMemo(
     () => (activeFilter === 'all' ? bookings : bookings.filter((booking) => booking.status === activeFilter)),

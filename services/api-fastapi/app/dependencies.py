@@ -23,14 +23,13 @@ async def get_current_user(
             return user.user
         except HTTPException:
             raise
-        except Exception:
-            if not settings.demo_fallback_enabled:
-                raise HTTPException(
-                    status_code=401,
-                    detail="Could not validate credentials",
-                )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=401,
+                detail="Could not validate credentials",
+            ) from exc
 
-    if settings.demo_fallback_enabled:
+    if settings.demo_fallback_enabled and not credentials and not is_supabase_configured():
         return DEMO_USER
 
     if not credentials:

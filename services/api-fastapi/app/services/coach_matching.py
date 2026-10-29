@@ -50,7 +50,7 @@ async def get_matched_coaches(user_id: str, limit: int = 10) -> List[dict]:
 
         coaches_result = (
             supabase.table("profiles")
-            .select("*, coach_details(*)")
+            .select("id, full_name, avatar_url, role, coach_details!inner(*)")
             .eq("role", "coach")
             .eq("coach_details.is_verified", True)
             .execute()

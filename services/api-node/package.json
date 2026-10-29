@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "syntax": "node ../../scripts/release/check-bff-syntax.mjs"
+    "syntax": "node ../../scripts/release/check-bff-syntax.mjs",
+    "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

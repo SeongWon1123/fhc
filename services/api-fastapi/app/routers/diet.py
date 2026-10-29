@@ -46,14 +46,15 @@ async def diet_chat(
             history_result = (
                 supabase.table("chat_messages")
                 .select("role, content")
-                .eq("session_id", request.session_id)
-                .order("created_at")
+                .eq("session_id", str(request.session_id))
+                .eq("user_id", str(current_user.id))
+                .order("created_at", desc=True)
                 .limit(6)
                 .execute()
             )
             history = [
                 {"role": message["role"], "content": message["content"]}
-                for message in (history_result.data or [])
+                for message in reversed(history_result.data or [])
             ]
         except Exception:
             if settings.demo_fallback_enabled:
@@ -70,14 +71,14 @@ async def diet_chat(
                 [
                     {
                         "user_id": str(current_user.id),
-                        "session_id": request.session_id,
+                        "session_id": str(request.session_id),
                         "role": "user",
                         "content": request.message,
                         "context_type": request.context_type,
                     },
                     {
                         "user_id": str(current_user.id),
-                        "session_id": request.session_id,
+                        "session_id": str(request.session_id),
                         "role": "assistant",
                         "content": reply,
                         "context_type": request.context_type,
