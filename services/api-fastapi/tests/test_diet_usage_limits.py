@@ -182,7 +182,8 @@ def test_demo_chat_uses_memory_limit_without_database(demo_app, monkeypatch):
 def image_client(demo_app, monkeypatch):
     calls = []
 
-    async def analyze(content, _):
+    async def analyze(content, _, mime):
+        assert mime == "image/png"
         calls.append(content)
         return {"ai_analysis": "meal"}
 

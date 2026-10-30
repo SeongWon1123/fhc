@@ -164,7 +164,7 @@ async def analyze_diet_image(
     if not image_usage.consume(str(current_user.id), settings.diet_image_daily_limit):
         raise HTTPException(status_code=429, detail="Daily image analysis limit reached")
 
-    analysis = await analyze_food_image(content, user_profile)
+    analysis = await analyze_food_image(content, user_profile, detected_type)
     analysis["image_data_url"] = f"data:{detected_type};base64,{base64.b64encode(content).decode()}"
     analysis.setdefault("analysis", analysis.get("ai_analysis", "Food image analyzed."))
     return analysis

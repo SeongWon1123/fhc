@@ -188,7 +188,8 @@ def test_image_type_is_verified_before_analysis(demo_app, monkeypatch, mime, con
     # Given: the external model is replaced at its call boundary.
     analyzed = []
 
-    async def analyze(data, _):
+    async def analyze(data, _, detected_mime):
+        assert detected_mime == mime
         analyzed.append(data)
         return {"ai_analysis": "meal", "image_data_url": "untrusted"}
 

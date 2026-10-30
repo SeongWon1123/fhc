@@ -1,5 +1,6 @@
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +20,16 @@ class Settings(BaseSettings):
     chat_api_base_url: str = ""
     chat_api_key: str = ""
     chat_api_model: str = ""
+    embed_provider: Literal["ollama", "openai_compatible"] = "ollama"
+    embed_api_base_url: str = ""
+    embed_api_key: str = ""
+    embed_api_model: str = ""
+    embed_dimensions: int = Field(default=768, ge=768, le=768)
+    rag_match_threshold: float = Field(default=0.5, ge=0, le=1)
+    vision_provider: Literal["ollama", "openai_compatible"] = "ollama"
+    vision_api_base_url: str = ""
+    vision_api_key: str = ""
+    vision_api_model: str = ""
     diet_chat_daily_limit: int = 50
     diet_image_daily_limit: int = 20
     jwt_secret: str = "fitconnect-secret"
@@ -87,6 +98,23 @@ class Settings(BaseSettings):
             }.items():
                 if self.is_placeholder(value):
                     errors.append(f"{name} is required when CHAT_PROVIDER=openai_compatible")
+
+        for prefix, provider, base_url, api_key, model in (
+            ("EMBED", self.embed_provider, self.embed_api_base_url,
+             self.embed_api_key, self.embed_api_model),
+            ("VISION", self.vision_provider, self.vision_api_base_url,
+             self.vision_api_key, self.vision_api_model),
+        ):
+            if provider == "openai_compatible":
+                for name, value in {
+                    f"{prefix}_API_BASE_URL": base_url.strip() or self.chat_api_base_url,
+                    f"{prefix}_API_KEY": api_key.strip() or self.chat_api_key,
+                    f"{prefix}_API_MODEL": model,
+                }.items():
+                    if self.is_placeholder(value):
+                        errors.append(
+                            f"{name} is required when {prefix}_PROVIDER=openai_compatible"
+                        )
 
         if self.enable_demo_fallback:
             errors.append("ENABLE_DEMO_FALLBACK must be false in production")

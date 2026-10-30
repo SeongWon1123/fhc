@@ -1,68 +1,94 @@
-"""
-RAG 문서에 Ollama nomic-embed-text 임베딩을 추가하는 초기화 스크립트
+"""Embed NULL RAG documents with Ollama or an OpenAI-compatible API.
 
-사전 조건:
-  1. Ollama가 실행 중이어야 함 (docker-compose up ollama 또는 로컬 ollama serve)
-  2. nomic-embed-text 모델이 풀되어 있어야 함:
-       ollama pull nomic-embed-text
-
-실행:
-  python infra/scripts/embed_rag.py
+Run from the repository root: python infra/scripts/embed_rag.py [--force]
+--force re-embeds every document; keep the query and document models identical.
 """
+import argparse
 import os
-import requests
+
+import httpx
 from supabase import create_client
 from dotenv import load_dotenv
 
+load_dotenv(".env")
 load_dotenv("services/api-fastapi/.env")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 OLLAMA_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
-
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+EMBED_PROVIDER = os.getenv("EMBED_PROVIDER", "ollama")
+EMBED_API_BASE_URL = (
+    os.getenv("EMBED_API_BASE_URL", "").strip() or os.getenv("CHAT_API_BASE_URL", "").strip()
+).rstrip("/")
+EMBED_API_KEY = os.getenv("EMBED_API_KEY", "").strip() or os.getenv("CHAT_API_KEY", "").strip()
+EMBED_API_MODEL = os.getenv("EMBED_API_MODEL", "").strip()
+EMBED_DIMENSIONS = int(os.getenv("EMBED_DIMENSIONS", "768"))
 
 def get_embedding(text: str) -> list[float]:
-    """Ollama nomic-embed-text로 768차원 임베딩 생성"""
-    response = requests.post(
-        f"{OLLAMA_URL}/api/embeddings",
-        json={"model": EMBED_MODEL, "prompt": text},
-        timeout=60
-    )
+    """Generate a vector matching rag_documents.embedding's 768 dimensions."""
+    if EMBED_DIMENSIONS != 768:
+        raise ValueError("EMBED_DIMENSIONS must be 768 for rag_documents")
+    if EMBED_PROVIDER == "openai_compatible":
+        if not (EMBED_API_BASE_URL and EMBED_API_KEY and EMBED_API_MODEL):
+            raise ValueError("Embedding API configuration is incomplete")
+        response = httpx.post(
+            f"{EMBED_API_BASE_URL}/embeddings",
+            headers={"Authorization": f"Bearer {EMBED_API_KEY}"},
+            json={"model": EMBED_API_MODEL, "input": text, "dimensions": EMBED_DIMENSIONS},
+            timeout=30,
+        )
+    elif EMBED_PROVIDER == "ollama":
+        response = httpx.post(
+            f"{OLLAMA_URL}/api/embeddings",
+            json={"model": EMBED_MODEL, "prompt": text},
+            timeout=60,
+        )
+    else:
+        raise ValueError("Unsupported EMBED_PROVIDER")
     response.raise_for_status()
-    return response.json()["embedding"]
+    embedding = (
+        response.json()["data"][0]["embedding"]
+        if EMBED_PROVIDER == "openai_compatible" else response.json()["embedding"]
+    )
+    if not isinstance(embedding, list) or len(embedding) != EMBED_DIMENSIONS:
+        raise ValueError("Embedding API returned an unexpected vector dimension")
+    return embedding
 
-def embed_documents():
-    print(f"Connecting to Ollama: {OLLAMA_URL}")
-    print(f"Embedding model: {EMBED_MODEL}")
+def embed_documents(force: bool = False) -> None:
+    """Use the server service-role client; report successes and failures separately."""
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    docs = []
+    # Collect before updating, so NULL-filtered pages cannot shift during writes.
+    while True:
+        query = supabase.table("rag_documents").select("id, content, title")
+        if not force:
+            query = query.is_("embedding", "null")
+        page = query.order("id").range(len(docs), len(docs) + 999).execute().data or []
+        docs.extend(page)
+        if len(page) < 1000:
+            break
 
-    try:
-        requests.get(f"{OLLAMA_URL}/api/tags", timeout=5)
-        print("Ollama connection confirmed")
-    except Exception:
-        print("Cannot connect to Ollama. Make sure 'ollama serve' is running.")
-        return
-
-    docs = supabase.table('rag_documents').select('id, content, title').is_('embedding', 'null').execute()
-
-    if not docs.data:
+    print(f"Documents to embed: {len(docs)}")
+    if not docs:
         print("All documents already have embeddings.")
         return
 
-    print(f"Documents to embed: {len(docs.data)}")
-
-    for i, doc in enumerate(docs.data, 1):
-        print(f"  [{i}/{len(docs.data)}] {doc['title'][:30]}...")
+    completed = 0
+    for i, doc in enumerate(docs, 1):
+        print(f"  [{i}/{len(docs)}]")
         try:
             embedding = get_embedding(doc['content'])
             supabase.table('rag_documents').update({
                 'embedding': embedding
             }).eq('id', doc['id']).execute()
+            completed += 1
         except Exception as e:
-            print(f"  Failed: {e}")
+            print(f"  Failed: {type(e).__name__}")
 
-    print(f"\nCompleted embedding {len(docs.data)} documents (768d / nomic-embed-text)")
+    print(f"\nCompleted: {completed}; failed: {len(docs) - completed}; dimensions: 768")
 
 if __name__ == "__main__":
-    embed_documents()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--force", action="store_true", help="Re-embed all documents")
+    embed_documents(force=parser.parse_args().force)
