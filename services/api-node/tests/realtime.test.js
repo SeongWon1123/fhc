@@ -4,6 +4,8 @@ const { once } = require('node:events');
 const { createServer } = require('node:http');
 const express = require('express');
 const { Server } = require('socket.io');
+// Node 20 (the BFF runtime image) has no global WebSocket; ws ships with socket.io.
+const WebSocket = globalThis.WebSocket ?? require('ws');
 
 // Only bootstrap configuration; every auth/database call uses the injected client.
 process.env.SUPABASE_URL = 'http://127.0.0.1:54321';
