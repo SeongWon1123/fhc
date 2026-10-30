@@ -78,7 +78,7 @@ flowchart LR
 | FastAPI | `GET /api/v1/clothing/recommendations` | 운동 종목별 의류 추천 |
 | FastAPI | `POST /api/v1/clothing/click/{recommendation_id}` | 추천 클릭 추적 |
 | BFF | `GET /health` | BFF 헬스체크 |
-| BFF | `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/kakao` | 인증 |
+| BFF | `POST /api/auth/kakao` | 인증 |
 | BFF | `GET /api/notifications`, `PATCH /api/notifications/{id}/read` | 알림 |
 | BFF | `POST /api/realtime/trigger-update` | 실시간 이벤트 트리거 |
 

@@ -16,12 +16,12 @@ class BookingCreate(BaseModel):
     scheduled_at: datetime
     duration_minutes: int = Field(default=60, gt=0, le=240)
     session_type: SessionType = SessionType.online
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=500)
 
 
 class BookingStatusUpdate(BaseModel):
     status: Literal["pending", "confirmed", "completed", "cancelled", "no_show"]
-    coach_notes: str | None = None
+    coach_notes: str | None = Field(default=None, max_length=500)
 
 
 class ReviewCreate(BaseModel):

@@ -134,7 +134,9 @@ def test_database_overlap_is_409_and_never_a_demo_success(demo_app, monkeypatch)
             return self
 
         def execute(self):
-            return SimpleNamespace(data=[{"base_price": 60000, "gym_id": None}])
+            return SimpleNamespace(data=[{
+                "base_price": 60000, "gym_id": None, "is_verified": True, "role": "coach",
+            }])
 
         def insert(self, _):
             raise APIError({"code": "23P01", "message": "overlap", "details": "", "hint": ""})

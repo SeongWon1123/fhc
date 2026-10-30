@@ -15,6 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Search } from 'lucide-react-native';
 import { CoachCard } from '../../components/CoachCard';
 import { api } from '../../lib/api';
+import { sortCoachesByRating } from '../../lib/coachSort';
 import { Coach } from '../../types';
 
 const filters = [
@@ -59,7 +60,7 @@ export const CoachListScreen: React.FC = () => {
   const filteredCoaches = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
 
-    return coaches.filter((coach) => {
+    const matchingCoaches = coaches.filter((coach) => {
       const details = coach.coach_details;
       const matchesSearch =
         !query ||
@@ -68,12 +69,14 @@ export const CoachListScreen: React.FC = () => {
 
       const matchesFilter =
         selectedFilter === 'all' ||
+        selectedFilter === 'top_rated' ||
         (selectedFilter === 'online' && details.is_online_available) ||
-        (selectedFilter === 'offline' && details.is_offline_available) ||
-        (selectedFilter === 'top_rated' && details.rating >= 4.7);
+        (selectedFilter === 'offline' && details.is_offline_available);
 
       return matchesSearch && matchesFilter;
     });
+
+    return selectedFilter === 'top_rated' ? sortCoachesByRating(matchingCoaches) : matchingCoaches;
   }, [coaches, searchQuery, selectedFilter]);
 
   const handleCoachPress = (coach: Coach) => {
@@ -102,6 +105,8 @@ export const CoachListScreen: React.FC = () => {
         {filters.map((filter) => (
           <TouchableOpacity
             key={filter.key}
+            accessibilityRole="button"
+            accessibilityState={{ selected: selectedFilter === filter.key }}
             style={[styles.filterChip, selectedFilter === filter.key && styles.selectedFilterChip]}
             onPress={() => setSelectedFilter(filter.key)}
           >

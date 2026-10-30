@@ -55,7 +55,7 @@ async def list_coaches(
     try:
         query = supabase.table("profiles").select(
             "id, full_name, avatar_url, role, coach_details!inner(*)"
-        ).eq("role", "coach")
+        ).eq("role", "coach").eq("coach_details.is_verified", True)
         if specialty:
             query = query.contains("coach_details.specialty", [specialty])
         if location:
@@ -149,10 +149,12 @@ async def get_coach_detail(coach_id: UUID):
                 )
                 .eq("id", str(coach_id))
                 .eq("role", "coach")
-                .single()
+                .limit(1)
                 .execute()
             )
-            if result.data:
+            coach_row = result.data[0] if result.data else None
+            if coach_row and (coach_row.get("coach_details") or {}).get("is_verified") is True:
+                result.data = coach_row
                 result.data["reviews"] = [
                     {
                         "id": review["id"],
@@ -168,6 +170,10 @@ async def get_coach_detail(coach_id: UUID):
                     )[:20]
                 ]
                 return result.data
+            if not settings.demo_fallback_enabled:
+                raise HTTPException(status_code=404, detail="Coach not found")
+        except HTTPException:
+            raise
         except Exception:
             if not settings.demo_fallback_enabled:
                 raise HTTPException(status_code=503, detail="Coach data store unavailable")

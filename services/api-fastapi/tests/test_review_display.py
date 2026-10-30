@@ -40,7 +40,10 @@ def test_coach_detail_returns_only_public_reviews_newest_first(strict_app, monke
         for day in range(1, 23)
     ]
     reviews[-1]["profiles"] = None
-    profile = {"id": COACH, "role": "coach", "reviews": None if empty_reviews else reviews}
+    profile = {
+        "id": COACH, "role": "coach", "coach_details": {"is_verified": True},
+        "reviews": None if empty_reviews else reviews,
+    }
     selections = []
 
     class Query:
@@ -51,11 +54,11 @@ def test_coach_detail_returns_only_public_reviews_newest_first(strict_app, monke
         def eq(self, *_):
             return self
 
-        def single(self):
+        def limit(self, _):
             return self
 
         def execute(self):
-            return SimpleNamespace(data=dict(profile))
+            return SimpleNamespace(data=[dict(profile)])
 
     monkeypatch.setattr(coaches, "get_optional_supabase", lambda: SimpleNamespace(table=lambda _: Query()))
     with TestClient(strict_app.app) as client:
@@ -78,3 +81,25 @@ def test_coach_detail_returns_only_public_reviews_newest_first(strict_app, monke
             assert set(review) == {"id", "rating", "content", "created_at", "author"}
             assert "profiles" not in review
             assert "email" not in review
+
+
+@pytest.mark.parametrize("rows", [[], [{"id": COACH, "role": "coach", "coach_details": {"is_verified": False}}],
+                                  [{"id": COACH, "role": "coach", "coach_details": None}]])
+def test_coach_detail_hides_missing_and_unapproved_coaches(strict_app, monkeypatch, rows):
+    class Query:
+        def select(self, _):
+            return self
+
+        def eq(self, *_):
+            return self
+
+        def limit(self, _):
+            return self
+
+        def execute(self):
+            return SimpleNamespace(data=rows)
+
+    monkeypatch.setattr(coaches, "get_optional_supabase", lambda: SimpleNamespace(table=lambda _: Query()))
+    with TestClient(strict_app.app) as client:
+        response = client.get(f"/api/v1/coaches/{COACH}")
+    assert response.status_code == 404

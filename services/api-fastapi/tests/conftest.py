@@ -39,6 +39,8 @@ _RELOAD_MODULES = (
     "app.routers.diet",
     "app.routers.clothing",
     "app.routers.admin",
+    "app.routers.workouts",
+    "app.routers.account",
 )
 
 

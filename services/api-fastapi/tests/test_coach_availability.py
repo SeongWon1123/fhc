@@ -13,9 +13,10 @@ COACH = "00000000-0000-0000-0000-0000000000f3"
 def store(strict_app, monkeypatch):
     tables = {
         "coach_details": [{
-            "id": COACH, "base_price": 30000,
+            "id": COACH, "base_price": 30000, "is_verified": True,
             "weekly_availability": {"mon": ["09:00", "10:00"], "tue": []},
         }],
+        "profiles": [{"id": COACH, "role": "coach"}],
         "bookings": [],
     }
 

@@ -21,6 +21,13 @@ function isProduction() {
   return String(process.env.ENVIRONMENT || '').toLowerCase() === 'production';
 }
 
+function trustProxy() {
+  const value = String(process.env.TRUST_PROXY ?? '1').trim().toLowerCase();
+  if (value === 'false') return false;
+  if (/^\d+$/.test(value)) return Number(value);
+  throw new Error('TRUST_PROXY must be a non-negative hop count or false');
+}
+
 function productionConfigErrors() {
   if (!isProduction()) return [];
 
@@ -35,6 +42,10 @@ function productionConfigErrors() {
     if (isPlaceholder(value)) {
       errors.push(`${name} is missing or still uses a placeholder`);
     }
+  }
+
+  if (process.env.SUPABASE_ANON_KEY && isPlaceholder(process.env.SUPABASE_ANON_KEY)) {
+    errors.push('SUPABASE_ANON_KEY still uses a placeholder');
   }
 
   const origins = csvEnv('ALLOWED_ORIGINS', '');
@@ -61,4 +72,5 @@ module.exports = {
   isPlaceholder,
   isProduction,
   productionConfigErrors,
+  trustProxy,
 };

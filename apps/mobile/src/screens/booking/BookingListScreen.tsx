@@ -4,8 +4,8 @@ import {
   TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import type { NavigationProp } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
+import type { NavigationProp, RouteProp } from '@react-navigation/native';
 import { isAxiosError } from 'axios';
 import { Check } from 'lucide-react-native';
 import { BookingCardComponent } from '../../components/BookingCardComponent';
@@ -19,13 +19,20 @@ import type { Booking } from '../../types';
 import { tokens as t } from '../../theme/tokens';
 import { KoreanText as Text } from '../../components/common/KoreanText';
 
+type BookingRoutes = {
+  readonly Coaches: undefined;
+  readonly Bookings: { readonly bookingId?: string; readonly focusAt?: number } | undefined;
+};
+
 function BookingManagement({
-  booking, actorId, disabled, error, onReload, onUpdate, onReview,
+  booking, actorId, disabled, error, highlighted, onLayout, onReload, onUpdate, onReview,
 }: {
   readonly booking: Booking;
   readonly actorId: string;
   readonly disabled: boolean;
   readonly error: string | null;
+  readonly highlighted: boolean;
+  readonly onLayout: () => void;
   readonly onReload: () => void;
   readonly onUpdate: (booking: Booking, action: BookingAction, notes: string) => Promise<void>;
   readonly onReview: (booking: Booking, payload: { rating: number; content: string | null }) => Promise<string | null>;
@@ -60,7 +67,13 @@ function BookingManagement({
   useEffect(() => { setSelected(null); }, [booking.status]);
 
   return (
-    <View style={styles.booking} testID={`booking-${booking.id}`}>
+    <View
+      style={[styles.booking, highlighted && styles.highlightedBooking]}
+      testID={`booking-${booking.id}`}
+      accessibilityState={{ selected: highlighted }}
+      onLayout={onLayout}
+    >
+      {highlighted ? <Text style={styles.focusBadge}>알림에서 연 예약</Text> : null}
       <BookingCardComponent booking={booking} />
       <View style={styles.controls}>
         <Text style={styles.participant}>
@@ -198,7 +211,10 @@ function BookingManagement({
 }
 
 export const BookingListScreen: React.FC = () => {
-  const navigation = useNavigation<NavigationProp<{ Coaches: undefined }>>();
+  const navigation = useNavigation<NavigationProp<BookingRoutes, 'Bookings'>>();
+  const route = useRoute<RouteProp<BookingRoutes, 'Bookings'>>();
+  const bookingId = route.params?.bookingId;
+  const focusAt = route.params?.focusAt;
   const user = useStore((state) => state.user);
   const userId = user?.id ?? '';
   const [role, setRole] = useState<'user' | 'coach'>(user?.role === 'coach' ? 'coach' : 'user');
@@ -208,6 +224,17 @@ export const BookingListScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const [focusMissing, setFocusMissing] = useState(false);
+  const list = useRef<FlatList<Booking>>(null);
+  const pendingScroll = useRef<string | null>(null);
+  const onViewableItemsChanged = useRef(({ viewableItems }: {
+    viewableItems: { item: Booking; isViewable: boolean }[];
+  }) => {
+    if (viewableItems.some(({ item, isViewable }) => isViewable && item.id === pendingScroll.current)) {
+      pendingScroll.current = null;
+    }
+  }).current;
   const [mutationError, setMutationError] = useState<{
     readonly bookingId: string;
     readonly message: string;
@@ -225,10 +252,28 @@ export const BookingListScreen: React.FC = () => {
     const controller = new AbortController();
     request.current = controller;
     try {
-      const { data } = await api.get<Booking[]>('/bookings/my', {
+      let { data } = await api.get<Booking[]>('/bookings/my', {
         params: { role }, signal: controller.signal,
       });
       if (controller.signal.aborted) return false;
+      if (bookingId && focusAt !== undefined) {
+        if (!data.some((item) => item.id === bookingId) && user?.role === 'coach') {
+          const otherRole = role === 'coach' ? 'user' : 'coach';
+          const other = await api.get<Booking[]>('/bookings/my', {
+            params: { role: otherRole }, signal: controller.signal,
+          });
+          if (controller.signal.aborted) return false;
+          if (other.data.some((item) => item.id === bookingId)) {
+            data = other.data;
+            setRole(otherRole);
+          }
+        }
+        const found = data.some((item) => item.id === bookingId);
+        pendingScroll.current = found ? bookingId : null;
+        setHighlightedId(found ? bookingId : null);
+        setFocusMissing(!found);
+        navigation.setParams({ bookingId: undefined, focusAt: undefined });
+      }
       setBookings(data);
       setError(null);
       return true;
@@ -245,7 +290,23 @@ export const BookingListScreen: React.FC = () => {
         setRefreshing(false);
       }
     }
-  }, [role, userId]);
+  }, [role, userId, user?.role, bookingId, focusAt, navigation]);
+
+  useFocusEffect(useCallback(() => () => {
+    pendingScroll.current = null;
+    setHighlightedId(null);
+    setFocusMissing(false);
+  }, []));
+
+  const scrollToBooking = useCallback(() => {
+    if (!pendingScroll.current) return;
+    const index = bookings.findIndex((item) => item.id === pendingScroll.current);
+    if (index >= 0) list.current?.scrollToIndex({ index, animated: false, viewPosition: 0 });
+  }, [bookings]);
+
+  useEffect(() => {
+    scrollToBooking();
+  }, [scrollToBooking, highlightedId]);
 
   useFocusEffect(useCallback(() => {
     active.current = true;
@@ -341,22 +402,35 @@ export const BookingListScreen: React.FC = () => {
         ) : null}
       </View>
       <FlatList
+        ref={list}
         data={bookings}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <BookingManagement
             booking={item} actorId={userId} disabled={saving} onUpdate={updateBooking} onReview={submitReview}
+            highlighted={highlightedId === item.id}
+            onLayout={scrollToBooking}
             error={mutationError?.bookingId === item.id ? mutationError.message : null}
             onReload={() => void reloadBooking(item.id)}
           />
         )}
         contentContainerStyle={styles.list}
+        onContentSizeChange={scrollToBooking}
+        onScrollToIndexFailed={({ index, averageItemLength }) => {
+          list.current?.scrollToOffset({ offset: averageItemLength * index, animated: false });
+        }}
+        onViewableItemsChanged={onViewableItemsChanged}
         keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => {
           setRefreshing(true); void fetchBookings();
         }} tintColor={t.color.primary} />}
         ListHeaderComponent={(
           <View>
+            {focusMissing ? (
+              <Text accessibilityLiveRegion="polite" style={[styles.message, styles.warning]}>
+                알림의 예약을 찾을 수 없습니다. 취소되었거나 삭제된 예약일 수 있습니다.
+              </Text>
+            ) : null}
             {message ? (
               <Text accessibilityLiveRegion="polite" style={[styles.message, message.kind === 'warning' && styles.warning]}>
                 {message.text}
@@ -400,6 +474,8 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: t.font.secondary, lineHeight: 24, color: t.color.mutedText },
   list: { padding: t.space.lg, paddingBottom: t.space.section },
   booking: { marginBottom: t.space.xl },
+  highlightedBooking: { borderWidth: 2, borderColor: t.color.primary, backgroundColor: t.color.primarySoft, borderRadius: t.radius.card, padding: t.space.xs },
+  focusBadge: { color: t.color.primary, fontSize: t.font.secondary, fontWeight: '700', padding: t.space.sm },
   controls: { backgroundColor: t.color.surface, marginTop: -t.space.lg, padding: t.space.lg, borderBottomLeftRadius: t.radius.card, borderBottomRightRadius: t.radius.card, gap: t.space.md },
   participant: { color: t.color.text, fontSize: t.font.body, fontWeight: '600' },
   field: { gap: t.space.sm },

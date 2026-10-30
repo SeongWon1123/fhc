@@ -1,5 +1,6 @@
 """Run against an explicitly selected local PostgreSQL cluster, never production."""
 
+import json
 import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing, contextmanager
@@ -76,12 +77,13 @@ def security_database(request: pytest.FixtureRequest):
 
 
 @contextmanager
-def as_role(database, role, user=MEMBER):
+def as_role(database, role, user=MEMBER, email="a@example.test"):
     with closing(psycopg2.connect(database[0])) as conn:
         conn.autocommit = True
         with conn.cursor() as cursor:
             cursor.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(role)))
             cursor.execute("SELECT set_config('request.jwt.claim.sub', %s, false)", (user,))
+            cursor.execute("SELECT set_config('request.jwt.claims', %s, false)", (json.dumps({"sub": user, "email": email}),))
             yield cursor
 
 
@@ -142,6 +144,169 @@ def test_client_cannot_bypass_booking_api(security_database):
                 "INSERT INTO bookings(user_id,coach_id,scheduled_at,price) VALUES (%s,%s,'2026-12-01 10:00Z',1)",
                 (MEMBER, COACH),
             )
+
+
+@pytest.mark.parametrize("role", ["anon", "authenticated"])
+@pytest.mark.parametrize("table", [
+    "reviews", "gyms", "diet_logs", "workout_logs",
+    "chat_messages", "notifications", "clothing_recommendations",
+])
+@pytest.mark.parametrize("privilege", ["INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"])
+def test_api_owned_tables_have_no_client_write_grants(security_database, role, table, privilege):
+    with as_role(security_database, "postgres") as cursor:
+        cursor.execute("SELECT has_table_privilege(%s, %s, %s)", (role, table, privilege))
+        assert cursor.fetchone() == (False,)
+
+
+@pytest.mark.parametrize("role,table", [
+    ("anon", "reviews"), ("anon", "coach_details"), ("anon", "gyms"),
+    ("anon", "chat_messages"), ("authenticated", "chat_messages"),
+    ("anon", "notifications"), ("authenticated", "notifications"),
+    ("anon", "clothing_recommendations"), ("authenticated", "clothing_recommendations"),
+])
+def test_private_tables_reject_client_reads(security_database, role, table):
+    with as_role(security_database, role) as cursor:
+        with pytest.raises(errors.InsufficientPrivilege):
+            cursor.execute(sql.SQL("SELECT * FROM {}").format(sql.Identifier(table)))
+
+
+@pytest.mark.parametrize("user,visible", [(MEMBER, True), (COACH, True), (OTHER, False)])
+def test_reviews_are_visible_only_to_participants(security_database, user, visible):
+    with as_role(security_database, "service_role", user=user) as cursor:
+        cursor.execute("BEGIN")
+        cursor.execute(
+            "INSERT INTO reviews(user_id,coach_id,rating) VALUES (%s,%s,5) RETURNING id",
+            (MEMBER, COACH),
+        )
+        review = cursor.fetchone()[0]
+        cursor.execute("SET LOCAL ROLE authenticated")
+        cursor.execute("SELECT id FROM reviews WHERE id=%s", (review,))
+        assert cursor.fetchall() == ([(review,)] if visible else [])
+
+
+@pytest.mark.parametrize("user,verified,visible", [
+    (MEMBER, False, False), (MEMBER, True, True), (COACH, False, True),
+])
+def test_coach_details_hide_other_pending_applicants(security_database, user, verified, visible):
+    with as_role(security_database, "service_role", user=user) as cursor:
+        cursor.execute("BEGIN")
+        cursor.execute("UPDATE coach_details SET is_verified=%s WHERE id=%s", (verified, COACH))
+        cursor.execute("SET LOCAL ROLE authenticated")
+        cursor.execute("SELECT id FROM coach_details WHERE id=%s", (COACH,))
+        assert cursor.fetchall() == ([(COACH,)] if visible else [])
+
+
+@pytest.mark.parametrize("table", ["diet_logs", "workout_logs"])
+def test_clients_can_count_only_their_own_logs(security_database, table):
+    with as_role(security_database, "service_role") as cursor:
+        cursor.execute("BEGIN")
+        cursor.execute(
+            sql.SQL("INSERT INTO {}(user_id) VALUES (%s),(%s)").format(sql.Identifier(table)),
+            (MEMBER, OTHER),
+        )
+        cursor.execute("SET LOCAL ROLE authenticated")
+        cursor.execute(sql.SQL("SELECT user_id, COUNT(*) FROM {} GROUP BY user_id").format(sql.Identifier(table)))
+        assert cursor.fetchall() == [(MEMBER, 1)]
+
+
+@pytest.mark.parametrize("email,jwt_email,allowed", [
+    ("new@example.test", "NEW@EXAMPLE.TEST", True),
+    (None, "new@example.test", True),
+    ("victim@example.test", "new@example.test", False),
+    ("new@example.test", None, False),
+    ("NEW@EXAMPLE.TEST", "new@example.test", False),
+])
+def test_profile_insert_email_must_match_lowercase_jwt(security_database, email, jwt_email, allowed):
+    user = str(uuid4())
+    with as_role(security_database, "postgres", user=user, email=jwt_email) as cursor:
+        cursor.execute("BEGIN")
+        cursor.execute("INSERT INTO auth.users(id) VALUES (%s)", (user,))
+        cursor.execute("SET LOCAL ROLE authenticated")
+        statement = "INSERT INTO profiles(id,email,role) VALUES (%s,%s,'user') RETURNING email"
+        if allowed:
+            cursor.execute(statement, (user, email))
+            assert cursor.fetchone() == (email,)
+        else:
+            with pytest.raises(errors.InsufficientPrivilege):
+                cursor.execute(statement, (user, email))
+
+
+@pytest.mark.parametrize("statement", [
+    "UPDATE profiles SET email='victim@example.test' WHERE id=%s",
+    "UPDATE profiles SET email=NULL WHERE id=%s",
+])
+def test_profile_email_cannot_be_changed_by_clients(security_database, statement):
+    with as_role(security_database, "authenticated") as cursor:
+        with pytest.raises(errors.InsufficientPrivilege):
+            cursor.execute(statement, (MEMBER,))
+
+
+@pytest.mark.parametrize("before,after,allowed", [
+    (False, True, True), (False, False, True), (True, True, True),
+    (True, False, False), (True, None, False), (False, None, False),
+    (None, False, False), (None, True, False), (None, None, True),
+])
+def test_profile_onboarding_is_monotonic(security_database, before, after, allowed):
+    with as_role(security_database, "service_role") as cursor:
+        cursor.execute("BEGIN")
+        cursor.execute("UPDATE profiles SET onboarding_completed=%s WHERE id=%s", (before, MEMBER))
+        cursor.execute("SET LOCAL ROLE authenticated")
+        statement = "UPDATE profiles SET onboarding_completed=%s WHERE id=%s RETURNING onboarding_completed"
+        if allowed:
+            cursor.execute(statement, (after, MEMBER))
+            assert cursor.fetchone() == (after,)
+        else:
+            with pytest.raises(errors.InsufficientPrivilege):
+                cursor.execute(statement, (after, MEMBER))
+
+
+def test_existing_profile_upsert_keeps_login_and_onboarding_working(security_database):
+    with as_role(security_database, "authenticated") as cursor:
+        cursor.execute("BEGIN")
+        cursor.execute("""
+            INSERT INTO profiles(id,email,role,full_name,fitness_goal,preferred_sports,onboarding_completed)
+            VALUES (%s,'a@example.test','user','Member','maintenance',ARRAY['gym'],true)
+            ON CONFLICT (id) DO UPDATE SET
+                email=EXCLUDED.email, role=EXCLUDED.role, full_name=EXCLUDED.full_name,
+                fitness_goal=EXCLUDED.fitness_goal, preferred_sports=EXCLUDED.preferred_sports,
+                onboarding_completed=EXCLUDED.onboarding_completed
+            RETURNING full_name,onboarding_completed
+        """, (MEMBER,))
+        assert cursor.fetchone() == ("Member", True)
+
+
+def test_service_role_can_manage_profile_email_and_onboarding(security_database):
+    with as_role(security_database, "service_role") as cursor:
+        cursor.execute("BEGIN")
+        cursor.execute("UPDATE profiles SET onboarding_completed=true WHERE id=%s", (MEMBER,))
+        cursor.execute("""
+            UPDATE profiles SET email='server@example.test',onboarding_completed=false
+            WHERE id=%s RETURNING email,onboarding_completed
+        """, (MEMBER,))
+        assert cursor.fetchone() == ("server@example.test", False)
+
+
+@pytest.mark.parametrize("role,allowed", [("anon", False), ("authenticated", False), ("service_role", True)])
+def test_all_rag_rpc_overloads_are_service_only(security_database, role, allowed):
+    with as_role(security_database, "postgres") as cursor:
+        cursor.execute("""
+            SELECT p.oid, has_function_privilege(%s, p.oid, 'EXECUTE')
+            FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+            WHERE n.nspname='public'
+              AND p.proname IN ('match_rag_documents','rag_array_cosine_similarity')
+        """, (role,))
+        functions = cursor.fetchall()
+        assert functions
+        assert all(executable == allowed for _, executable in functions)
+        cursor.execute("""
+            SELECT p.oid
+            FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace,
+                 LATERAL aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) acl
+            WHERE n.nspname='public'
+              AND p.proname IN ('match_rag_documents','rag_array_cosine_similarity')
+              AND acl.grantee=0 AND acl.privilege_type='EXECUTE'
+        """)
+        assert cursor.fetchall() == []
 
 
 def test_overlap_constraint_covers_duration_offsets_and_cancelled_slots(security_database):

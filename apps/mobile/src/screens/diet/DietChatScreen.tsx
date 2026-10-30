@@ -15,6 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Camera, ListChecks, Send } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { uuid } from 'expo-modules-core';
+import { isAxiosError } from 'axios';
 import { ChatBubble } from '../../components/ChatBubble';
 import { Loading } from '../../components/common/Loading';
 import { api } from '../../lib/api';
@@ -91,7 +92,11 @@ export const DietChatScreen: React.FC = () => {
       appendAssistantMessage(data?.reply ?? '식단 서비스가 답변을 반환하지 않았습니다. 다시 시도해주세요.');
     } catch (error) {
       console.error('식단 메시지 전송에 실패했습니다:', error);
-      appendAssistantMessage('현재 식단 서비스를 사용할 수 없습니다. 연결이 복구된 뒤 다시 시도해주세요.');
+      appendAssistantMessage(
+        isAxiosError(error) && error.response?.status === 429
+          ? '오늘 식단 코치 사용 횟수를 모두 사용했습니다. 내일 다시 이용해주세요.'
+          : '현재 식단 서비스를 사용할 수 없습니다. 연결이 복구된 뒤 다시 시도해주세요.',
+      );
     } finally {
       requestInFlight.current = false;
       setSending(false);
@@ -161,7 +166,11 @@ export const DietChatScreen: React.FC = () => {
       appendAssistantMessage(analysis.analysis);
     } catch (error) {
       console.error('이미지 분석에 실패했습니다:', error);
-      appendAssistantMessage('현재 이미지 분석을 사용할 수 없습니다. 연결이 복구된 뒤 다시 시도해주세요.');
+      appendAssistantMessage(
+        isAxiosError(error) && error.response?.status === 429
+          ? '오늘 사진 분석 사용 횟수를 모두 사용했습니다. 내일 다시 이용해주세요.'
+          : '현재 이미지 분석을 사용할 수 없습니다. 연결이 복구된 뒤 다시 시도해주세요.',
+      );
     } finally {
       requestInFlight.current = false;
       setSending(false);

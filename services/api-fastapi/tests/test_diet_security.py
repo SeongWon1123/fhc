@@ -42,12 +42,20 @@ def test_chat_history_is_filtered_by_user_and_session(strict_app, monkeypatch):
         def __init__(self, table):
             self.table = table
             self.filters = {}
+            self.count = None
+            self.created_after = None
 
-        def select(self, _):
+        def select(self, _, *, count=None):
+            self.count = count
             return self
 
         def eq(self, key, value):
             self.filters[key] = value
+            return self
+
+        def gte(self, key, value):
+            assert key == "created_at"
+            self.created_after = value
             return self
 
         def single(self):
@@ -67,8 +75,12 @@ def test_chat_history_is_filtered_by_user_and_session(strict_app, monkeypatch):
             data = {} if self.table == "profiles" else [
                 row for row in messages
                 if all(row.get(key) == value for key, value in self.filters.items())
+                and (
+                    self.created_after is None
+                    or row.get("created_at", self.created_after) >= self.created_after
+                )
             ]
-            return SimpleNamespace(data=data)
+            return SimpleNamespace(data=data, count=len(data) if self.count else None)
 
     async def reply(_, history, __):
         captured.extend(history)

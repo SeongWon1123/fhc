@@ -1,12 +1,13 @@
 import React, { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { Award, BookOpen, Calendar, ChevronRight, HelpCircle, LogOut, Shield, User as UserIcon } from 'lucide-react-native';
+import { Award, Bell, BookOpen, Calendar, ChevronRight, Dumbbell, HelpCircle, LogOut, Shield, Trash2, User as UserIcon } from 'lucide-react-native';
 import { Image } from 'expo-image';
 import { Button } from '../../components/common/Button';
 import { supabase } from '../../lib/supabase';
 import { notify } from '../../lib/notify';
 import { useStore } from '../../lib/store';
+import { useNotificationStore } from '../../lib/notifications';
 
 type Stats = {
   workouts: number | null;
@@ -20,6 +21,10 @@ const countOf = (response: { count: number | null; error: unknown }) =>
 export const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const { user, signOut } = useStore();
+  const unreadCount = useNotificationStore((state) => state.unreadCount);
+  const refreshNotifications = useNotificationStore((state) => state.refresh);
+  const [notificationUserId, setNotificationUserId] = useState<string | null>(null);
+  const visibleUnreadCount = user?.id === notificationUserId ? unreadCount : 0;
   const [stats, setStats] = useState<Stats>({
     workouts: null,
     dietLogs: null,
@@ -29,6 +34,30 @@ export const ProfileScreen: React.FC = () => {
   useFocusEffect(useCallback(() => {
     void fetchUserStats();
   }, [user?.id]));
+
+  useFocusEffect(useCallback(() => {
+    const controller = new AbortController();
+    const userId = user?.id;
+    setNotificationUserId(null);
+    useNotificationStore.setState({ unreadCount: 0 });
+
+    const refresh = async () => {
+      try {
+        await refreshNotifications(controller.signal);
+        if (!controller.signal.aborted && userId) setNotificationUserId(userId);
+      } catch (error: unknown) {
+        if (!controller.signal.aborted) {
+          console.error('알림 개수를 불러오지 못했습니다:', error instanceof Error ? error.message : error);
+        }
+      }
+    };
+
+    if (userId) void refresh();
+    return () => {
+      controller.abort();
+      useNotificationStore.setState({ unreadCount: 0 });
+    };
+  }, [user?.id, refreshNotifications]));
 
   const fetchUserStats = async () => {
     if (!user) return;
@@ -71,7 +100,25 @@ export const ProfileScreen: React.FC = () => {
     : [];
 
   const menuItems = [
+    {
+      icon: UserIcon,
+      title: '프로필 수정',
+      subtitle: '이름, 연락처와 운동 목표 수정',
+      onPress: () => navigation.navigate('ProfileEdit'),
+    },
     ...coachMenu,
+    {
+      icon: Dumbbell,
+      title: '운동 기록',
+      subtitle: '운동 내역 기록하고 확인하기',
+      onPress: () => navigation.navigate('WorkoutLog'),
+    },
+    {
+      icon: Bell,
+      title: '알림',
+      subtitle: `읽지 않은 알림 ${visibleUnreadCount}개`,
+      onPress: () => navigation.navigate('Notifications'),
+    },
     {
       icon: Calendar,
       title: '내 예약',
@@ -91,7 +138,7 @@ export const ProfileScreen: React.FC = () => {
       onPress: () =>
         notify(
           '개인정보 및 데이터',
-          '핏커넥트는 서비스 제공을 위해 프로필, 예약, 식단 기록, 선택한 식사 이미지 데이터만 저장합니다. 데이터 삭제 요청은 지원 문의로 처리합니다.'
+          '핏커넥트는 서비스 제공을 위해 프로필, 예약, 운동·식단 기록, 선택한 식사 이미지와 알림 데이터를 저장합니다. 계정과 연결된 데이터 삭제는 내 정보 > 계정 삭제에서 진행할 수 있습니다.'
         ),
     },
     {
@@ -100,6 +147,12 @@ export const ProfileScreen: React.FC = () => {
       subtitle: '계정, 예약, 데이터 요청 도움 받기',
       onPress: () => notify('지원 문의', 'MVP 파일럿 기간에는 핏커넥트 운영팀 문의 채널로 연락해주세요.'),
     },
+    ...(user && user.role !== 'admin' ? [{
+      icon: Trash2,
+      title: '계정 삭제',
+      subtitle: '계정과 연결된 데이터 영구 삭제',
+      onPress: () => navigation.navigate('AccountDelete'),
+    }] : []),
   ];
 
   const roleLabel =
@@ -150,7 +203,14 @@ export const ProfileScreen: React.FC = () => {
           {menuItems.map((item) => {
             const Icon = item.icon;
             return (
-              <TouchableOpacity key={item.title} style={styles.menuItem} onPress={item.onPress}>
+              <TouchableOpacity
+                key={item.title}
+                style={styles.menuItem}
+                onPress={item.onPress}
+                accessibilityRole="button"
+                accessibilityLabel={item.title}
+                accessibilityHint={item.subtitle}
+              >
                 <View style={styles.menuItemLeft}>
                   <Icon size={23} color="#6b7280" />
                   <View style={styles.menuItemText}>

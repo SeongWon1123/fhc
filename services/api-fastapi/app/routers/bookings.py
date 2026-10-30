@@ -1,5 +1,5 @@
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
@@ -18,6 +18,7 @@ from app.fallback import (
 )
 from app.models.booking import BookingCreate, BookingResponse, BookingStatusUpdate, ReviewCreate
 from app.services.booking_events import publish_booking_change
+from app.services.notifications import notify_booking, notify_review
 from app.services.booking_rules import (
     BookingConflictError,
     BookingPermissionError,
@@ -46,6 +47,11 @@ async def create_booking(
     response: Response,
     current_user=Depends(get_current_user),
 ):
+    scheduled_at = booking.scheduled_at
+    if scheduled_at.tzinfo is None:
+        scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+    if scheduled_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=422, detail="Booking time must be in the future")
     if str(booking.coach_id) == str(current_user.id):
         raise HTTPException(status_code=422, detail="Cannot book yourself as coach")
     if _using_demo_user(current_user):
@@ -71,6 +77,17 @@ async def create_booking(
         if not coaches.data:
             raise HTTPException(status_code=404, detail="Coach not found")
         coach = coaches.data[0]
+        if coach.get("is_verified") is not True:
+            raise HTTPException(status_code=404, detail="Coach not found")
+        profiles = (
+            supabase.table("profiles")
+            .select("*")
+            .eq("id", str(booking.coach_id))
+            .limit(1)
+            .execute()
+        )
+        if not profiles.data or profiles.data[0].get("role") != "coach":
+            raise HTTPException(status_code=404, detail="Coach not found")
         availability = coach.get("weekly_availability")
         if isinstance(availability, dict):
             start = booking.scheduled_at.astimezone(ZoneInfo("Asia/Seoul"))
@@ -109,6 +126,7 @@ async def create_booking(
         raise _database_error(exc) from exc
 
     saved = result.data[0]
+    notify_booking(saved, str(current_user.id))
     response.headers["X-Booking-Notification"] = await publish_booking_change(
         str(saved["id"]), request.headers.get("authorization", ""), settings.bff_internal_url
     )
@@ -183,6 +201,7 @@ async def create_review(
         raise HTTPException(status_code=503, detail="Review data store unavailable") from exc
     except HTTPError as exc:
         raise HTTPException(status_code=503, detail="Review data store unavailable") from exc
+    notify_review(saved.data[0])
     return saved.data[0]
 
 
@@ -242,6 +261,7 @@ async def update_booking_status(
             }).eq("id", str(saved["coach_id"])).execute()
         except Exception:
             logging.getLogger(__name__).warning("Completed booking count refresh failed")
+    notify_booking(saved, str(current_user.id))
     response.headers["X-Booking-Notification"] = await publish_booking_change(
         str(saved["id"]), request.headers.get("authorization", ""), settings.bff_internal_url
     )

@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     chat_api_base_url: str = ""
     chat_api_key: str = ""
     chat_api_model: str = ""
+    diet_chat_daily_limit: int = 50
+    diet_image_daily_limit: int = 20
     jwt_secret: str = "fitconnect-secret"
     admin_api_key: str = ""
     environment: str = "development"

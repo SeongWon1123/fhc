@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 from typing import Annotated, Literal, Optional, List
 from uuid import UUID
 
@@ -18,8 +18,17 @@ class CoachDetailUpdate(BaseModel):
     location: Optional[str] = Field(None, max_length=100)
     is_online_available: Optional[bool] = None
     is_offline_available: Optional[bool] = None
-    video_url: Optional[str] = None
+    video_url: Optional[str] = Field(default=None, max_length=500)
     weekly_availability: dict[Weekday, HourlySlots] | None = None
+
+    @field_validator("video_url")
+    @classmethod
+    def validate_video_url(cls, value: str | None) -> str | None:
+        if value is not None and (
+            not value.startswith("https://") or HttpUrl(value).scheme != "https"
+        ):
+            raise ValueError("Video URL must use https://")
+        return value
 
     @field_validator("weekly_availability")
     @classmethod

@@ -13,6 +13,10 @@ import { DietLogScreen } from '../screens/diet/DietLogScreen';
 import { ClothingScreen } from '../screens/clothing/ClothingScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { CoachProfileScreen } from '../screens/profile/CoachProfileScreen';
+import { WorkoutLogScreen } from '../screens/workout/WorkoutLogScreen';
+import { ProfileEditScreen } from '../screens/profile/ProfileEditScreen';
+import { AccountDeleteScreen } from '../screens/profile/AccountDeleteScreen';
+import { NotificationsScreen } from '../screens/notifications/NotificationsScreen';
 import { BookingRealtimeBanner } from '../components/BookingRealtimeBanner';
 import { useStore } from '../lib/store';
 
@@ -26,6 +30,10 @@ function ProfileStackNavigator() {
     <ProfileStack.Navigator>
       <ProfileStack.Screen name="ProfileHome" component={ProfileScreen} options={{ headerShown: false, title: '내 정보' }} />
       <ProfileStack.Screen name="CoachProfile" component={CoachProfileScreen} options={{ title: '코치 프로필' }} />
+      <ProfileStack.Screen name="WorkoutLog" component={WorkoutLogScreen} options={{ title: '운동 기록' }} />
+      <ProfileStack.Screen name="ProfileEdit" component={ProfileEditScreen} options={{ title: '프로필 수정' }} />
+      <ProfileStack.Screen name="AccountDelete" component={AccountDeleteScreen} options={{ title: '계정 삭제' }} />
+      <ProfileStack.Screen name="Notifications" component={NotificationsScreen} options={{ title: '알림' }} />
     </ProfileStack.Navigator>
   );
 }

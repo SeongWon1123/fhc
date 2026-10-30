@@ -38,12 +38,14 @@ export const Input: React.FC<InputProps> = ({
   ...props
 }) => {
   const [isFocused, setIsFocused] = useState(false);
+  // A placeholder occupies the text area, so the label stays floated on the border.
+  const isFloated = isFocused || value.length > 0 || Boolean(placeholder);
 
   return (
     <View style={[styles.container, containerStyle]}>
       <Text style={[
         styles.label,
-        (isFocused || value.length > 0) && styles.labelFocused,
+        isFloated && styles.labelFocused,
       ]}>
         {label}
       </Text>

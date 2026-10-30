@@ -40,6 +40,20 @@ BEGIN
     END IF;
 END $$;
 
+-- Local PostgreSQL has no Supabase auth helpers; never replace the hosted helper.
+DO $$
+BEGIN
+    IF to_regprocedure('auth.jwt()') IS NULL THEN
+        CREATE FUNCTION auth.jwt()
+        RETURNS JSONB
+        LANGUAGE sql
+        STABLE
+        AS $function$
+            SELECT COALESCE(NULLIF(current_setting('request.jwt.claims', true), ''), '{}')::JSONB
+        $function$;
+    END IF;
+END $$;
+
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'vector') THEN
@@ -486,6 +500,25 @@ BEGIN
         ELSIF NEW.role IS DISTINCT FROM OLD.role OR NEW.gym_id IS DISTINCT FROM OLD.gym_id THEN
             RAISE EXCEPTION 'Profile role and gym assignment are server-managed' USING ERRCODE = '42501';
         END IF;
+
+        IF NEW.full_name IS NOT NULL
+           AND NEW.full_name ~* '(운영|관리자|핏커넥트|fitconnect|admin|official|공식)' THEN
+            RAISE EXCEPTION 'Profile name uses a reserved word' USING ERRCODE = '42501';
+        END IF;
+
+        IF TG_OP = 'INSERT' THEN
+            IF NEW.email IS NOT NULL AND NEW.email IS DISTINCT FROM lower(auth.jwt()->>'email') THEN
+                RAISE EXCEPTION 'Profile email must match the authenticated email' USING ERRCODE = '42501';
+            END IF;
+        ELSE
+            IF NEW.email IS DISTINCT FROM OLD.email THEN
+                RAISE EXCEPTION 'Profile email is server-managed' USING ERRCODE = '42501';
+            END IF;
+            IF NEW.onboarding_completed IS DISTINCT FROM OLD.onboarding_completed
+               AND NOT (OLD.onboarding_completed IS FALSE AND NEW.onboarding_completed IS TRUE) THEN
+                RAISE EXCEPTION 'Profile onboarding may only be completed' USING ERRCODE = '42501';
+            END IF;
+        END IF;
     END IF;
     RETURN NEW;
 END;
@@ -532,26 +565,11 @@ DROP POLICY IF EXISTS "profiles_update_own" ON profiles;
 DROP POLICY IF EXISTS "Users can edit own profile" ON profiles;
 CREATE POLICY "profiles_update_own" ON profiles FOR UPDATE USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
 
-DROP POLICY IF EXISTS "coach_details_read_all" ON coach_details;
-CREATE POLICY "coach_details_read_all" ON coach_details FOR SELECT USING (TRUE);
-
 DROP POLICY IF EXISTS "coach_details_insert_own" ON coach_details;
 DROP POLICY IF EXISTS "coach_details_update_own" ON coach_details;
 
-DROP POLICY IF EXISTS "workout_logs_own" ON workout_logs;
-CREATE POLICY "workout_logs_own" ON workout_logs FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-
-DROP POLICY IF EXISTS "diet_logs_own" ON diet_logs;
-CREATE POLICY "diet_logs_own" ON diet_logs FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-
 DROP POLICY IF EXISTS "gyms_read_all" ON gyms;
 CREATE POLICY "gyms_read_all" ON gyms FOR SELECT USING (TRUE);
-
-DROP POLICY IF EXISTS "gyms_owner_insert" ON gyms;
-CREATE POLICY "gyms_owner_insert" ON gyms FOR INSERT WITH CHECK (auth.uid() = owner_id);
-
-DROP POLICY IF EXISTS "gyms_owner_update" ON gyms;
-CREATE POLICY "gyms_owner_update" ON gyms FOR UPDATE USING (auth.uid() = owner_id) WITH CHECK (auth.uid() = owner_id);
 
 DROP POLICY IF EXISTS "bookings_user_select" ON bookings;
 CREATE POLICY "bookings_user_select" ON bookings FOR SELECT USING (auth.uid() = user_id OR auth.uid() = coach_id);
@@ -565,21 +583,6 @@ CREATE POLICY "payments_user_select" ON payments FOR SELECT USING (auth.uid() = 
 DROP POLICY IF EXISTS "payments_service_insert" ON payments;
 DROP POLICY IF EXISTS "payments_service_update" ON payments;
 -- Server service-role clients bypass RLS. No client write policy is required.
-
-DROP POLICY IF EXISTS "reviews_read_all" ON reviews;
-CREATE POLICY "reviews_read_all" ON reviews FOR SELECT USING (TRUE);
-
-DROP POLICY IF EXISTS "reviews_user_insert" ON reviews;
-CREATE POLICY "reviews_user_insert" ON reviews FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-DROP POLICY IF EXISTS "reviews_user_update" ON reviews;
-CREATE POLICY "reviews_user_update" ON reviews FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-
-DROP POLICY IF EXISTS "chat_messages_own" ON chat_messages;
-CREATE POLICY "chat_messages_own" ON chat_messages FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-
-DROP POLICY IF EXISTS "clothing_own" ON clothing_recommendations;
-CREATE POLICY "clothing_own" ON clothing_recommendations FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS "rag_read_all" ON rag_documents;
 CREATE POLICY "rag_read_all" ON rag_documents FOR SELECT USING (TRUE);
@@ -603,9 +606,6 @@ BEGIN
     END LOOP;
 END $$;
 
-DROP POLICY IF EXISTS "notifications_own" ON notifications;
-CREATE POLICY "notifications_own" ON notifications FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-
 -- New Supabase projects may disable automatic table grants.
 -- Keep this after table creation; RLS alone does not grant table access.
 DO $$
@@ -623,6 +623,51 @@ BEGIN
         GRANT USAGE ON SCHEMA public TO authenticated;
         GRANT SELECT, INSERT, UPDATE ON TABLE profiles TO authenticated;
         GRANT SELECT ON TABLE bookings, diet_logs, workout_logs TO authenticated;
+        GRANT SELECT ON TABLE reviews, coach_details, gyms TO authenticated;
+    END IF;
+END $$;
+
+-- Final client restrictions follow all table grants, including legacy auto-grants.
+DROP POLICY IF EXISTS "reviews_read_all" ON reviews;
+CREATE POLICY "reviews_read_all" ON reviews FOR SELECT
+    USING (auth.uid() IN (user_id, coach_id));
+DROP POLICY IF EXISTS "reviews_user_insert" ON reviews;
+DROP POLICY IF EXISTS "reviews_user_update" ON reviews;
+
+DROP POLICY IF EXISTS "coach_details_read_all" ON coach_details;
+CREATE POLICY "coach_details_read_all" ON coach_details FOR SELECT
+    USING (is_verified = TRUE OR id = auth.uid());
+
+DROP POLICY IF EXISTS "gyms_owner_insert" ON gyms;
+DROP POLICY IF EXISTS "gyms_owner_update" ON gyms;
+
+DROP POLICY IF EXISTS "diet_logs_own" ON diet_logs;
+CREATE POLICY "diet_logs_own" ON diet_logs FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "workout_logs_own" ON workout_logs;
+CREATE POLICY "workout_logs_own" ON workout_logs FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "chat_messages_own" ON chat_messages;
+DROP POLICY IF EXISTS "notifications_own" ON notifications;
+DROP POLICY IF EXISTS "clothing_own" ON clothing_recommendations;
+
+DO $$
+DECLARE
+    client_role TEXT;
+BEGIN
+    FOREACH client_role IN ARRAY ARRAY['anon', 'authenticated']
+    LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = client_role) THEN
+            EXECUTE format(
+                'REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON reviews, gyms, diet_logs, workout_logs, chat_messages, notifications, clothing_recommendations FROM %I',
+                client_role
+            );
+            EXECUTE format(
+                'REVOKE SELECT ON chat_messages, notifications, clothing_recommendations FROM %I',
+                client_role
+            );
+        END IF;
+    END LOOP;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+        REVOKE SELECT ON reviews, coach_details, gyms FROM anon;
     END IF;
 END $$;
 
@@ -750,4 +795,30 @@ BEGIN
         END;
         $function$;
     END IF;
+END $$;
+
+-- Cover both embedding implementations and any overload retained after a rerun.
+DO $$
+DECLARE
+    rpc REGPROCEDURE;
+    client_role TEXT;
+BEGIN
+    FOR rpc IN
+        SELECT p.oid::regprocedure
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public'
+          AND p.proname IN ('match_rag_documents', 'rag_array_cosine_similarity')
+    LOOP
+        EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', rpc);
+        FOREACH client_role IN ARRAY ARRAY['anon', 'authenticated']
+        LOOP
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = client_role) THEN
+                EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM %I', rpc, client_role);
+            END IF;
+        END LOOP;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+            EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', rpc);
+        END IF;
+    END LOOP;
 END $$;

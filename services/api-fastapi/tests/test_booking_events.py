@@ -9,7 +9,7 @@ from postgrest._sync.request_builder import SyncRequestBuilder
 
 from app import fallback
 from app.routers import bookings
-from app.services import booking_events
+from app.services import booking_events, notifications
 
 
 MEMBER_ID = "10000000-0000-0000-0000-000000000001"
@@ -38,13 +38,22 @@ def booking_http(strict_app, monkeypatch):
         "created_at": "2026-10-23T00:00:00+00:00",
     }
     state = SimpleNamespace(
-        saved=saved, events=[], publications=[], actor_id=MEMBER_ID,
+        saved=saved, events=[], publications=[], inbox=[], actor_id=MEMBER_ID,
         write_error=False, stale=False, missing=False, notification="ok",
     )
 
     def database(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/coach_details"):
-            return httpx.Response(200, json=[{"base_price": 60000, "gym_id": None}])
+            return httpx.Response(200, json=[{"base_price": 60000, "gym_id": None, "is_verified": True}])
+        if request.url.path.endswith("/profiles"):
+            return httpx.Response(200, json=[{"full_name": "참여자", "role": "coach"}])
+        if request.url.path.endswith("/notifications"):
+            assert request.method == "POST"
+            assert state.events == ["saved"]
+            row = json.loads(request.content)
+            state.inbox.append(row)
+            return httpx.Response(201, json=[{"id": "notification-1", **row}])
+        assert request.url.path.endswith("/bookings")
         if request.method == "GET":
             return httpx.Response(200, json=[] if state.missing else [saved.copy()])
         if state.write_error:
@@ -63,6 +72,8 @@ def booking_http(strict_app, monkeypatch):
     def notification(request: httpx.Request) -> httpx.Response:
         state.publications.append(request)
         assert state.events == ["saved"]
+        assert len(state.inbox) == 1
+        assert state.inbox[0]["data"] == {"booking_id": saved["id"], "status": saved["status"]}
         assert request.method == "POST"
         assert str(request.url) == "http://bff.test/api/realtime/trigger-update"
         assert request.headers["authorization"] == AUTHORIZATION
@@ -98,10 +109,12 @@ def booking_http(strict_app, monkeypatch):
         base_url="http://store.test/rest/v1", transport=httpx.MockTransport(database),
     ) as session:
         # Keep PostgREST serialization/error handling intact; replace only the wire.
+        store = SimpleNamespace(table=lambda table: SyncRequestBuilder(session, f"/{table}"))
         monkeypatch.setattr(
             bookings, "get_optional_supabase",
-            lambda: SimpleNamespace(table=lambda table: SyncRequestBuilder(session, f"/{table}")),
+            lambda: store,
         )
+        monkeypatch.setattr(notifications, "get_supabase", lambda: store)
         with TestClient(strict_app.app) as client:
             state.client = client
             yield state
