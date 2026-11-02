@@ -1,15 +1,10 @@
 import { Calendar, Search, Target, Users } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import type { Member } from '../data';
-import { loadMembers } from '../lib/operationsData';
+import { useMemo, useState } from 'react';
+import { useOperationsData } from '../lib/operationsContext';
 
 export default function Members() {
   const [searchTerm, setSearchTerm] = useState('');
-  const [members, setMembers] = useState<Member[]>([]);
-
-  useEffect(() => {
-    loadMembers().then(setMembers);
-  }, []);
+  const { members } = useOperationsData();
 
   const filteredMembers = useMemo(
     () =>

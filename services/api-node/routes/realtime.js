@@ -1,29 +1,42 @@
 const express = require('express');
-const router = express.Router();
-const { authenticateToken } = require('../middleware/auth');
+const { supabase, createAuthenticateToken } = require('../middleware/auth');
 
-// WebSocket은 index.js에서 Socket.IO로 직접 처리됩니다.
-// 이 파일은 REST API로 예약 상태 변경을 트리거하기 위한 엔드포인트입니다.
+function createRealtimeRouter(client) {
+  const router = express.Router();
 
-router.post('/trigger-update', authenticateToken, async (req, res) => {
-  const { bookingId, status, userId, coachId } = req.body;
-
-  if (!bookingId || !status) {
-    return res.status(400).json({ error: 'bookingId and status required' });
-  }
-
-  // Socket.IO 인스턴스를 app에서 가져와서 이벤트 emit
-  const io = req.app.get('io');
-  if (io) {
-    if (userId) {
-      io.to(`user_${userId}`).emit('booking_updated', { bookingId, status });
+  // FastAPI owns mutations. This endpoint only publishes persisted state.
+  router.post('/trigger-update', createAuthenticateToken(client), async (req, res) => {
+    const { bookingId } = req.body || {};
+    if (typeof bookingId !== 'string' || !bookingId.trim()) {
+      return res.status(400).json({ error: 'bookingId required' });
     }
-    if (coachId) {
-      io.to(`coach_${coachId}`).emit('booking_updated', { bookingId, status });
+
+    try {
+      const { data: booking, error } = await client
+        .from('bookings')
+        .select('id, user_id, coach_id, status')
+        .eq('id', bookingId)
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: 'Failed to load booking' });
+      if (!booking) return res.status(404).json({ error: 'Booking not found' });
+      if (req.user.id !== booking.user_id && req.user.id !== booking.coach_id) {
+        return res.status(403).json({ error: 'Not authorized' });
+      }
+
+      const io = req.app.get('io');
+      const update = { bookingId: booking.id, status: booking.status };
+      if (io) {
+        io.to(`user_${booking.user_id}`)
+          .to(`coach_${booking.coach_id}`)
+          .emit('booking_updated', update);
+      }
+      res.json({ success: true, ...update });
+    } catch {
+      res.status(500).json({ error: 'Failed to load booking' });
     }
-  }
+  });
+  return router;
+}
 
-  res.json({ success: true, bookingId, status });
-});
-
-module.exports = router;
+module.exports = createRealtimeRouter(supabase);
+module.exports.createRealtimeRouter = createRealtimeRouter;

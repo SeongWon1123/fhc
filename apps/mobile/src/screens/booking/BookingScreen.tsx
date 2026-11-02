@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -9,9 +9,11 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Calendar } from 'react-native-calendars';
+import { isAxiosError } from 'axios';
 import { Button } from '../../components/common/Button';
 import { Loading } from '../../components/common/Loading';
 import { api } from '../../lib/api';
+import { availableSlots } from '../../lib/coachProfile';
 import { notify } from '../../lib/notify';
 import { Coach } from '../../types';
 
@@ -31,6 +33,7 @@ export const BookingScreen: React.FC = () => {
   const [sessionType, setSessionType] = useState<'online' | 'offline'>('online');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
+  const submitting = useRef(false);
   const [loadingCoach, setLoadingCoach] = useState(!params.coach && Boolean(params.coach_id));
 
   useEffect(() => {
@@ -52,7 +55,14 @@ export const BookingScreen: React.FC = () => {
     fetchCoach();
   }, [params.coach, params.coach_id]);
 
-  const timeSlots = ['09:00', '10:00', '11:00', '12:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
+  const timeSlots = useMemo(
+    () => availableSlots(coach?.coach_details.weekly_availability, selectedDate),
+    [coach, selectedDate],
+  );
+
+  useEffect(() => {
+    setSelectedTime((time) => timeSlots.includes(time) ? time : '');
+  }, [timeSlots]);
 
   const minDate = useMemo(() => {
     const date = new Date();
@@ -67,6 +77,7 @@ export const BookingScreen: React.FC = () => {
   }, []);
 
   const handleBooking = async () => {
+    if (submitting.current) return;
     if (!selectedDate || !selectedTime) {
       notify('시간 선택', '예약 전에 날짜와 시간을 선택해주세요.');
       return;
@@ -82,11 +93,12 @@ export const BookingScreen: React.FC = () => {
       return;
     }
 
+    submitting.current = true;
     setLoading(true);
     try {
-      const scheduledAt = new Date(`${selectedDate}T${selectedTime}:00`).toISOString();
+      const scheduledAt = new Date(`${selectedDate}T${selectedTime}:00+09:00`).toISOString();
 
-      await api.post('/bookings', {
+      const response = await api.post('/bookings', {
         coach_id: coach.id,
         scheduled_at: scheduledAt,
         duration_minutes: 60,
@@ -95,13 +107,23 @@ export const BookingScreen: React.FC = () => {
         notes: notes.trim() || undefined,
       });
 
-      notify('예약 요청 완료', '예약 요청이 접수되었습니다.', [
-        { text: '예약 보기', onPress: () => navigation.navigate('BookingList') },
+      const message = response.headers['x-booking-notification'] === 'unavailable'
+        ? '예약은 접수됐지만 실시간 알림을 보내지 못했습니다. 예약 목록에서 상태를 확인할 수 있습니다.'
+        : '예약 요청이 접수되었습니다.';
+      notify('예약 요청 완료', message, [
+        { text: '예약 보기', onPress: () => navigation.navigate('Bookings') },
       ]);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('예약 생성에 실패했습니다:', error);
-      notify('예약 실패', '예약 서비스를 사용할 수 없습니다. 연결이 복구된 뒤 다시 시도해주세요.');
+      const slotTaken = isAxiosError(error) && error.response?.status === 409;
+      const outsideAvailability = isAxiosError(error) && error.response?.status === 422;
+      notify('예약 실패', slotTaken
+        ? '이미 예약된 시간입니다. 다른 시간을 선택해주세요.'
+        : outsideAvailability
+          ? '코치가 받지 않는 시간입니다. 다른 시간을 선택해주세요.'
+          : '예약 서비스를 사용할 수 없습니다. 연결이 복구된 뒤 다시 시도해주세요.');
     } finally {
+      submitting.current = false;
       setLoading(false);
     }
   };
@@ -155,10 +177,13 @@ export const BookingScreen: React.FC = () => {
         {selectedDate ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>시간 선택</Text>
+            {timeSlots.length === 0 ? <Text>이 날은 예약 가능한 시간이 없습니다.</Text> : null}
             <View style={styles.timeSlotsContainer}>
               {timeSlots.map((time) => (
                 <TouchableOpacity
                   key={time}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: selectedTime === time }}
                   style={[styles.timeSlot, selectedTime === time && styles.selectedTimeSlot]}
                   onPress={() => setSelectedTime(time)}
                 >

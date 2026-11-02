@@ -1,26 +1,13 @@
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { BarChart3, CalendarCheck, DollarSign, Shirt, Users } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import StatsCard from '../components/StatsCard';
-import type { Booking, ClothingFeedItem, Coach, Member } from '../data';
-import { loadOperationsData } from '../lib/operationsData';
+import { useOperationsData } from '../lib/operationsContext';
 
 const COLORS = ['#13795b', '#335c99', '#b86b00', '#7a4b9f'];
 
 export default function Analytics() {
-  const [bookings, setBookings] = useState<Booking[]>([]);
-  const [clothingItems, setClothingItems] = useState<ClothingFeedItem[]>([]);
-  const [coaches, setCoaches] = useState<Coach[]>([]);
-  const [members, setMembers] = useState<Member[]>([]);
-
-  useEffect(() => {
-    loadOperationsData().then((data) => {
-      setBookings(data.bookings);
-      setClothingItems(data.clothingItems);
-      setCoaches(data.coaches);
-      setMembers(data.members);
-    });
-  }, []);
+  const { bookings, clothingItems, coaches, members } = useOperationsData();
 
   const revenue = bookings.reduce((sum, booking) => sum + booking.amount, 0);
   const trendData = useMemo(() => {

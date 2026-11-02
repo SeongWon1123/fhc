@@ -4,6 +4,7 @@ import { supabase } from './supabase';
 export interface User {
   id: string;
   email: string;
+  phone?: string | null;
   full_name?: string;
   avatar_url?: string;
   role: 'user' | 'coach' | 'gym_owner' | 'admin';

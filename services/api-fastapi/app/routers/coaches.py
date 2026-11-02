@@ -9,6 +9,7 @@ from app.dependencies import get_current_user
 from app.fallback import get_coach, list_coaches as fallback_list_coaches, matched_coaches
 from app.models.coach import CoachDetailUpdate
 from app.services.coach_matching import get_matched_coaches
+from app.services.review_display import mask_review_author
 
 
 router = APIRouter(prefix="/coaches", tags=["coaches"])
@@ -52,7 +53,9 @@ async def list_coaches(
         raise HTTPException(status_code=503, detail="Coach data store unavailable")
 
     try:
-        query = supabase.table("profiles").select("*, coach_details(*)").eq("role", "coach")
+        query = supabase.table("profiles").select(
+            "id, full_name, avatar_url, role, coach_details!inner(*)"
+        ).eq("role", "coach").eq("coach_details.is_verified", True)
         if specialty:
             query = query.contains("coach_details.specialty", [specialty])
         if location:
@@ -84,7 +87,7 @@ async def get_recommended_coaches(limit: int = Query(10, ge=1, le=50)):
     try:
         result = (
             supabase.table("profiles")
-            .select("*, coach_details(*)")
+            .select("id, full_name, avatar_url, role, coach_details!inner(*)")
             .eq("role", "coach")
             .eq("coach_details.is_verified", True)
             .limit(limit)
@@ -109,6 +112,29 @@ async def get_ai_matched_coaches(
     return {"coaches": matched}
 
 
+@router.get("/me/details")
+async def get_my_coach_details(current_user=Depends(get_current_user)):
+    supabase = get_optional_supabase()
+    if supabase is None:
+        if settings.demo_fallback_enabled:
+            return {"role": "user", "details": None}
+        raise HTTPException(status_code=503, detail="Coach data store unavailable")
+
+    try:
+        profile = (
+            supabase.table("profiles").select("role")
+            .eq("id", str(current_user.id)).limit(1).execute()
+        )
+        details = (
+            supabase.table("coach_details").select("*")
+            .eq("id", str(current_user.id)).limit(1).execute()
+        )
+    except Exception:
+        raise HTTPException(status_code=503, detail="Coach data store unavailable")
+    role = profile.data[0]["role"] if profile.data else "user"
+    return {"role": role, "details": details.data[0] if details.data else None}
+
+
 @router.get("/{coach_id}")
 async def get_coach_detail(coach_id: UUID):
     supabase = get_optional_supabase()
@@ -116,13 +142,38 @@ async def get_coach_detail(coach_id: UUID):
         try:
             result = (
                 supabase.table("profiles")
-                .select("*, coach_details(*), reviews(*, profiles(full_name, avatar_url))")
+                .select(
+                    "id, full_name, avatar_url, role, coach_details(*), "
+                    "reviews!reviews_coach_id_fkey(id, rating, content, created_at, "
+                    "profiles!reviews_user_id_fkey(full_name))"
+                )
                 .eq("id", str(coach_id))
-                .single()
+                .eq("role", "coach")
+                .limit(1)
                 .execute()
             )
-            if result.data:
+            coach_row = result.data[0] if result.data else None
+            if coach_row and (coach_row.get("coach_details") or {}).get("is_verified") is True:
+                result.data = coach_row
+                result.data["reviews"] = [
+                    {
+                        "id": review["id"],
+                        "rating": review["rating"],
+                        "content": review.get("content"),
+                        "created_at": review["created_at"],
+                        "author": mask_review_author((review.get("profiles") or {}).get("full_name")),
+                    }
+                    for review in sorted(
+                        result.data.get("reviews") or [],
+                        key=lambda review: review["created_at"],
+                        reverse=True,
+                    )[:20]
+                ]
                 return result.data
+            if not settings.demo_fallback_enabled:
+                raise HTTPException(status_code=404, detail="Coach not found")
+        except HTTPException:
+            raise
         except Exception:
             if not settings.demo_fallback_enabled:
                 raise HTTPException(status_code=503, detail="Coach data store unavailable")

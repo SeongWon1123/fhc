@@ -4,21 +4,7 @@ import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
 import { supabase } from '../../lib/supabase';
 import { useStore } from '../../lib/store';
-
-const fitnessGoals = [
-  { key: 'weight_loss', label: '체중 감량' },
-  { key: 'muscle_gain', label: '근육 증가' },
-  { key: 'maintenance', label: '건강 유지' },
-  { key: 'endurance', label: '지구력 향상' },
-];
-
-const sports = [
-  { key: 'gym', label: '헬스' },
-  { key: 'running', label: '러닝' },
-  { key: 'pilates', label: '필라테스' },
-  { key: 'yoga', label: '요가' },
-  { key: 'crossfit', label: '크로스핏' },
-];
+import { fitnessGoals, sports } from '../../lib/profileOptions';
 
 export const OnboardingScreen: React.FC = () => {
   const [step, setStep] = useState(0);

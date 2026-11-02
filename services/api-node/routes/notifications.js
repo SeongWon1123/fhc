@@ -1,63 +1,47 @@
-﻿const express = require('express');
-const router = express.Router();
-const { authenticateToken } = require('../middleware/auth');
-const { createClient } = require('@supabase/supabase-js');
-const winston = require('winston');
+const express = require('express');
+const { supabase, createAuthenticateToken } = require('../middleware/auth');
 
-const logger = winston.createLogger({
-  level: 'info',
-  format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.json()
-  ),
-  transports: [new winston.transports.Console()]
-});
+function createNotificationsRouter(client) {
+  const router = express.Router();
+  router.use(createAuthenticateToken(client));
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+  router.get('/', async (req, res) => {
+    try {
+      const { data, error } = await client.from('notifications')
+        .select('*').eq('user_id', req.user.id)
+        .order('created_at', { ascending: false }).limit(50);
+      if (error) return res.status(500).json({ error: '알림을 불러오지 못했습니다.' });
+      res.json(data || []);
+    } catch {
+      res.status(500).json({ error: '알림을 불러오지 못했습니다.' });
+    }
+  });
 
-// ???뚮┝ 紐⑸줉
-router.get('/', authenticateToken, async (req, res) => {
-  const { data, error } = await supabase
-    .from('notifications')
-    .select('*')
-    .eq('user_id', req.user.id)
-    .order('created_at', { ascending: false })
-    .limit(50);
+  router.patch('/:id/read', async (req, res) => {
+    try {
+      const { data, error } = await client.from('notifications')
+        .update({ is_read: true }).eq('id', req.params.id)
+        .eq('user_id', req.user.id).select('id');
+      if (error) return res.status(500).json({ error: '알림을 읽음 처리하지 못했습니다.' });
+      if (!data?.length) return res.status(404).json({ error: '알림을 찾을 수 없습니다.' });
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ error: '알림을 읽음 처리하지 못했습니다.' });
+    }
+  });
 
-  if (error) {
-    logger.error('Notifications fetch error:', error.message);
-    return res.status(500).json({ error: 'Failed to fetch notifications' });
-  }
-  res.json(data);
-});
+  router.patch('/read-all', async (req, res) => {
+    try {
+      const { error } = await client.from('notifications')
+        .update({ is_read: true }).eq('user_id', req.user.id).eq('is_read', false);
+      if (error) return res.status(500).json({ error: '모든 알림을 읽음 처리하지 못했습니다.' });
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ error: '모든 알림을 읽음 처리하지 못했습니다.' });
+    }
+  });
+  return router;
+}
 
-// ?뚮┝ ?쎌쓬 泥섎━
-router.patch('/:id/read', authenticateToken, async (req, res) => {
-  const { data, error } = await supabase
-    .from('notifications')
-    .update({ is_read: true })
-    .eq('id', req.params.id)
-    .eq('user_id', req.user.id);
-
-  if (error) {
-    logger.error('Notification read update error:', error.message);
-    return res.status(500).json({ error: 'Failed to update notification' });
-  }
-  res.json({ success: true });
-});
-
-// 紐⑤뱺 ?뚮┝ ?쎌쓬 泥섎━
-router.patch('/read-all', authenticateToken, async (req, res) => {
-  await supabase
-    .from('notifications')
-    .update({ is_read: true })
-    .eq('user_id', req.user.id)
-    .eq('is_read', false);
-
-  res.json({ success: true });
-});
-
-module.exports = router;
+module.exports = createNotificationsRouter(supabase);
+module.exports.createNotificationsRouter = createNotificationsRouter;

@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Alert, Image, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { ArrowLeft, Award, Clock, MapPin, Share as ShareIcon, Star } from 'lucide-react-native';
 import { Button } from '../../components/common/Button';
 import { Loading } from '../../components/common/Loading';
 import { api } from '../../lib/api';
 import { Coach } from '../../types';
+import { sportLabel } from '../../lib/coachProfile';
 
 type CoachDetailRouteParams = {
   coach_id?: string;
@@ -16,27 +17,29 @@ export const CoachDetailScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const route = useRoute();
   const params = (route.params ?? {}) as CoachDetailRouteParams;
+  const coachId = params.coach_id ?? params.coach?.id;
   const [coach, setCoach] = useState<Coach | null>(params.coach ?? null);
-  const [loading, setLoading] = useState(!params.coach && Boolean(params.coach_id));
+  const [loading, setLoading] = useState(!params.coach && Boolean(coachId));
 
-  useEffect(() => {
-    if (params.coach_id && !params.coach) {
-      fetchCoachDetails(params.coach_id);
-    }
-  }, [params.coach, params.coach_id]);
-
-  const fetchCoachDetails = async (coachId: string) => {
+  // Refetch on every focus so reviews and counts written elsewhere appear on return.
+  useFocusEffect(useCallback(() => {
+    if (!coachId) return;
+    let active = true;
+    setCoach((current) => (current?.id === coachId ? current : params.coach ?? null));
     setLoading(true);
-    try {
-      const { data } = await api.get(`/coaches/${coachId}`);
-      setCoach(data ?? null);
-    } catch (error) {
-      console.error('코치 상세 정보를 불러오지 못했습니다:', error);
-      setCoach(null);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const fetchCoachDetails = async () => {
+      try {
+        const { data } = await api.get<Coach>(`/coaches/${coachId}`);
+        if (active) setCoach(data ?? null);
+      } catch (error) {
+        console.error('코치 상세 정보를 불러오지 못했습니다:', error);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    fetchCoachDetails();
+    return () => { active = false; };
+  }, [coachId, params.coach]));
 
   const handleBookingPress = () => {
     if (coach) {
@@ -57,7 +60,7 @@ export const CoachDetailScreen: React.FC = () => {
     }
   };
 
-  if (loading) {
+  if (loading && !coach) {
     return <Loading message="코치 프로필을 불러오는 중..." />;
   }
 
@@ -117,9 +120,9 @@ export const CoachDetailScreen: React.FC = () => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>전문 분야</Text>
           <View style={styles.tagsContainer}>
-            {details.specialty.map((specialty) => (
+            {(details.specialty ?? []).map((specialty) => (
               <View key={specialty} style={styles.tag}>
-                <Text style={styles.tagText}>{specialty}</Text>
+                <Text style={styles.tagText}>{sportLabel(specialty)}</Text>
               </View>
             ))}
           </View>
@@ -134,15 +137,23 @@ export const CoachDetailScreen: React.FC = () => {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>자격 및 이력</Text>
-          {details.qualifications.map((qualification) => (
-            <View key={qualification} style={styles.qualificationItem}>
-              <Award size={16} color="#2563eb" />
-              <Text style={styles.qualificationText}>{qualification}</Text>
-            </View>
-          ))}
+          {details.qualifications?.length ? (
+            details.qualifications.map((qualification) => (
+              <View key={qualification} style={styles.qualificationItem}>
+                <Award size={16} color="#2563eb" />
+                <Text style={styles.qualificationText}>{qualification}</Text>
+              </View>
+            ))
+          ) : (
+            <Text style={styles.bodyText}>등록된 자격 정보가 없습니다.</Text>
+          )}
         </View>
 
         <View style={styles.statsSection}>
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{details.booking_count ?? 0}</Text>
+            <Text style={styles.statLabel}>완료 세션</Text>
+          </View>
           <View style={styles.statItem}>
             <Text style={styles.statValue}>{details.review_count}</Text>
             <Text style={styles.statLabel}>리뷰</Text>
@@ -155,6 +166,28 @@ export const CoachDetailScreen: React.FC = () => {
             <Text style={styles.statValue}>{details.is_offline_available ? '가능' : '불가'}</Text>
             <Text style={styles.statLabel}>오프라인</Text>
           </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>리뷰</Text>
+          {coach.reviews?.length ? (
+            coach.reviews.map((review) => (
+              <View key={review.id} style={styles.reviewItem}>
+                <Text style={styles.reviewStars} accessibilityLabel={`별점 ${review.rating}점`}>
+                  {'★'.repeat(review.rating)}{'☆'.repeat(5 - review.rating)}
+                </Text>
+                <View style={styles.reviewMeta}>
+                  <Text style={styles.reviewAuthor}>{review.author}</Text>
+                  <Text style={styles.reviewDate}>
+                    {new Date(review.created_at).toLocaleDateString('ko-KR')}
+                  </Text>
+                </View>
+                {review.content ? <Text style={styles.bodyText}>{review.content}</Text> : null}
+              </View>
+            ))
+          ) : (
+            <Text style={styles.bodyText}>아직 리뷰가 없습니다.</Text>
+          )}
         </View>
 
         <View style={styles.actionSection}>
@@ -351,6 +384,31 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6b7280',
     marginTop: 4,
+  },
+  reviewItem: {
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f3f4f6',
+  },
+  reviewStars: {
+    fontSize: 18,
+    color: '#92400e',
+  },
+  reviewMeta: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+    marginVertical: 8,
+  },
+  reviewAuthor: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  reviewDate: {
+    fontSize: 12,
+    color: '#6b7280',
   },
   actionSection: {
     padding: 16,

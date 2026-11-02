@@ -8,6 +8,7 @@ from app.dependencies import get_current_user
 from app.fallback import DEMO_USER_ID, add_diet_log, list_diet_logs
 from app.models.diet import ChatRequest, ChatResponse, DietLogCreate
 from app.services.rag_service import analyze_food_image, generate_diet_response
+from app.services.usage_limits import demo_chat_usage, image_usage, kst_day_start
 
 
 router = APIRouter(prefix="/diet", tags=["diet"])
@@ -32,6 +33,27 @@ async def diet_chat(
     if supabase is None and not settings.demo_fallback_enabled:
         raise HTTPException(status_code=503, detail="Diet data store unavailable")
 
+    if supabase is None:
+        if not demo_chat_usage.consume(str(current_user.id), settings.diet_chat_daily_limit):
+            raise HTTPException(status_code=429, detail="Daily diet chat limit reached")
+    else:
+        try:
+            usage = (
+                supabase.table("chat_messages")
+                .select("id", count="exact")
+                .eq("user_id", str(current_user.id))
+                .eq("role", "user")
+                .gte("created_at", kst_day_start().isoformat())
+                .execute()
+            )
+            count = usage.count
+            if count is None:
+                raise HTTPException(status_code=503, detail="Diet usage count unavailable")
+        except Exception:
+            raise HTTPException(status_code=503, detail="Diet usage count unavailable")
+        if count >= settings.diet_chat_daily_limit:
+            raise HTTPException(status_code=429, detail="Daily diet chat limit reached")
+
     if supabase is not None:
         try:
             profile = (
@@ -46,14 +68,15 @@ async def diet_chat(
             history_result = (
                 supabase.table("chat_messages")
                 .select("role, content")
-                .eq("session_id", request.session_id)
-                .order("created_at")
+                .eq("session_id", str(request.session_id))
+                .eq("user_id", str(current_user.id))
+                .order("created_at", desc=True)
                 .limit(6)
                 .execute()
             )
             history = [
                 {"role": message["role"], "content": message["content"]}
-                for message in (history_result.data or [])
+                for message in reversed(history_result.data or [])
             ]
         except Exception:
             if settings.demo_fallback_enabled:
@@ -70,14 +93,14 @@ async def diet_chat(
                 [
                     {
                         "user_id": str(current_user.id),
-                        "session_id": request.session_id,
+                        "session_id": str(request.session_id),
                         "role": "user",
                         "content": request.message,
                         "context_type": request.context_type,
                     },
                     {
                         "user_id": str(current_user.id),
-                        "session_id": request.session_id,
+                        "session_id": str(request.session_id),
                         "role": "assistant",
                         "content": reply,
                         "context_type": request.context_type,
@@ -100,12 +123,22 @@ async def analyze_diet_image(
     upload = image or file
     if upload is None:
         raise HTTPException(status_code=400, detail="Image file required")
-    if not (upload.content_type or "").startswith("image/"):
+    if upload.content_type not in {"image/jpeg", "image/png", "image/webp"}:
         raise HTTPException(status_code=400, detail="Image file required")
 
-    content = await upload.read()
+    content = await upload.read(MAX_UPLOAD_SIZE + 1)
     if len(content) > MAX_UPLOAD_SIZE:
         raise HTTPException(status_code=413, detail="File size must be 5MB or smaller")
+
+    detected_type = None
+    if content.startswith(b"\xff\xd8\xff"):
+        detected_type = "image/jpeg"
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        detected_type = "image/png"
+    if content.startswith(b"RIFF") and content[8:12] == b"WEBP":
+        detected_type = "image/webp"
+    if detected_type is None or detected_type != upload.content_type:
+        raise HTTPException(status_code=400, detail="Image content does not match its type")
 
     supabase = None if _using_demo_user(current_user) else get_optional_supabase()
     user_profile: dict = {}
@@ -128,8 +161,11 @@ async def analyze_diet_image(
             else:
                 raise HTTPException(status_code=503, detail="Diet data store unavailable")
 
-    analysis = await analyze_food_image(content, user_profile)
-    analysis.setdefault("image_data_url", f"data:{upload.content_type};base64,{base64.b64encode(content).decode()}")
+    if not image_usage.consume(str(current_user.id), settings.diet_image_daily_limit):
+        raise HTTPException(status_code=429, detail="Daily image analysis limit reached")
+
+    analysis = await analyze_food_image(content, user_profile, detected_type)
+    analysis["image_data_url"] = f"data:{detected_type};base64,{base64.b64encode(content).decode()}"
     analysis.setdefault("analysis", analysis.get("ai_analysis", "Food image analyzed."))
     return analysis
 

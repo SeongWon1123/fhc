@@ -31,11 +31,16 @@ _CONFIGURED_ENV = {
 
 _RELOAD_MODULES = (
     "app.dependencies",
+    # This service also binds settings/database collaborators at import time.
+    # Reload it before routers so strict fixtures cannot leak into demo tests.
+    "app.services.clothing_service",
     "app.routers.coaches",
     "app.routers.bookings",
     "app.routers.diet",
     "app.routers.clothing",
     "app.routers.admin",
+    "app.routers.workouts",
+    "app.routers.account",
 )
 
 

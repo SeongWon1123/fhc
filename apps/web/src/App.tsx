@@ -11,8 +11,9 @@ import Members from './pages/Members';
 import { useSession } from './lib/useSession';
 import { decideGate } from './lib/gate';
 import Account from './components/Account';
+import OperatorSession from './components/OperatorSession';
 
-/** Renders the operator console only for an authenticated session. */
+/** A session alone is insufficient: the keyed boundary verifies server access. */
 function RequireAuth({ children }: { children: ReactNode }) {
   const { loading, session, unconfigured } = useSession();
 
@@ -22,7 +23,11 @@ function RequireAuth({ children }: { children: ReactNode }) {
     hasSession: Boolean(session),
   });
 
-  if (decision === 'loading') {
+  if (session && !loading && !unconfigured) {
+    return <OperatorSession key={`${session.user.id}:${session.access_token}`} token={session.access_token}>{children}</OperatorSession>;
+  }
+
+  if (decision === 'loading' && !unconfigured) {
     return (
       <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
         <p className="page-description">세션을 확인하는 중입니다...</p>
@@ -47,7 +52,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
     return <Auth />;
   }
 
-  return <>{children}</>;
+  return null;
 }
 
 /** Supplies the authenticated session that Account renders. */

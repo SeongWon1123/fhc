@@ -21,7 +21,7 @@ async def clothing_recommendations(
 ):
     normalized_category = normalize_sport_category(sport_category)
     try:
-        items = await get_clothing_recommendations(
+        recommendation_id, items = await get_clothing_recommendations(
             str(current_user.id),
             normalized_category,
         )
@@ -29,6 +29,7 @@ async def clothing_recommendations(
         raise HTTPException(status_code=503, detail=str(exc))
     return {
         "sport_category": normalized_category,
+        "recommendation_id": recommendation_id,
         "items": items,
     }
 

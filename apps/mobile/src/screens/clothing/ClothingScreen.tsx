@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   FlatList,
   Linking,
   RefreshControl,
@@ -13,6 +12,7 @@ import {
 import { ClothingCard } from '../../components/ClothingCard';
 import { Loading } from '../../components/common/Loading';
 import { api } from '../../lib/api';
+import { notify } from '../../lib/notify';
 import { ClothingItem } from '../../types';
 
 const sports = [
@@ -25,6 +25,7 @@ const sports = [
 
 export const ClothingScreen: React.FC = () => {
   const [clothingItems, setClothingItems] = useState<ClothingItem[]>([]);
+  const [recommendationId, setRecommendationId] = useState<string | null>(null);
   const [selectedSport, setSelectedSport] = useState('all');
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -40,9 +41,11 @@ export const ClothingScreen: React.FC = () => {
       const { data } = await api.get(`/clothing/recommendations?sport_category=${sportCategory}`);
       const nextItems = Array.isArray(data) ? data : data?.items;
       setClothingItems(Array.isArray(nextItems) ? nextItems : []);
+      setRecommendationId(typeof data?.recommendation_id === 'string' ? data.recommendation_id : null);
     } catch (error) {
       console.error('의류 추천을 불러오지 못했습니다:', error);
       setClothingItems([]);
+      setRecommendationId(null);
     } finally {
       setLoading(false);
     }
@@ -55,16 +58,22 @@ export const ClothingScreen: React.FC = () => {
   };
 
   const handleItemPress = async (item: ClothingItem) => {
+    if (recommendationId) {
+      // Tracking must never block the shopper from reaching the product.
+      api.post(`/clothing/click/${encodeURIComponent(recommendationId)}`).catch((error: unknown) => {
+        console.warn('의류 추천 클릭을 기록하지 못했습니다:', error);
+      });
+    }
     try {
       const supported = await Linking.canOpenURL(item.url);
       if (!supported) {
-        Alert.alert('링크 열기 불가', '이 추천 상품 링크를 열 수 없습니다.');
+        notify('링크 열기 불가', '이 추천 상품 링크를 열 수 없습니다.');
         return;
       }
       await Linking.openURL(item.url);
     } catch (error) {
       console.error('의류 링크 열기에 실패했습니다:', error);
-      Alert.alert('링크 열기 불가', '현재 이 추천 상품을 열 수 없습니다.');
+      notify('링크 열기 불가', '현재 이 추천 상품을 열 수 없습니다.');
     }
   };
 
@@ -92,6 +101,9 @@ export const ClothingScreen: React.FC = () => {
       <View style={styles.header}>
         <Text style={styles.title}>운동 의류</Text>
         <Text style={styles.subtitle}>운동 스타일에 맞는 의류 추천을 확인하세요.</Text>
+        <Text style={styles.disclosure}>
+          상품 링크는 외부 쇼핑몰(무신사)로 연결됩니다. '제휴' 표시 링크로 구매하면 핏커넥트가 수수료를 받을 수 있습니다.
+        </Text>
       </View>
 
       <View style={styles.filterContainer}>
@@ -149,6 +161,12 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     marginTop: 2,
     lineHeight: 20,
+  },
+  disclosure: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 8,
+    lineHeight: 17,
   },
   filterContainer: {
     backgroundColor: '#ffffff',
